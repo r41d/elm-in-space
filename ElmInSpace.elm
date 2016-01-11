@@ -25,7 +25,8 @@ type alias Enemy =
 -- type EnemyType = Bot | Mid | Top | Ufo
 
 type alias Shot = 
-  { pos    : (Float,Float)
+  { x : Float
+  , y : Float
   }
 
 type Action = Left | Right | Shoot | Nothing
@@ -35,7 +36,7 @@ initEnemies =
   let xlist = L.map (\x->x*15) [0..9]
       ylist = L.map (\x->x*15) [0..5]
       pp x y = (toFloat (70+5*x), toFloat (280+2*y)) -- position formula
-      kk y = (y) // round (resY*0.06) +1 -- kind formula
+      kk y = y // round (resY*0.06) + 1 -- kind formula
   in LE.lift2 (\x y -> {pos = pp x y, kind = kk y }) xlist ylist
 
 initial : State
@@ -46,17 +47,27 @@ initial = { playerX = 0
           }
 
 update : Action -> State -> State
-update act state = if act == Left
-                    then
-                     { state | playerX = state.playerX-1 }
-                   else if act == Right
-                    then
-                     { state | playerX = state.playerX+1 }
-                   else if act == Shoot
-                    then
-                     { state | shotsP = ({pos = playerpos state.playerX} :: state.shotsP) }
-                   else
-                     state
+update act state = let s2 = processInput act state
+                   in moveShots s2
+
+processInput : Action -> State -> State
+processInput act state = if act == Left
+                          then
+                           { state | playerX = state.playerX-1 }
+                         else if act == Right
+                          then
+                           { state | playerX = state.playerX+1 }
+                         else if act == Shoot
+                          then
+                           { state | shotsP = (newshot state :: state.shotsP) }
+                         else
+                           state
+
+newshot s = let z = playerpos s.playerX in {x = fst z, y = snd z}
+
+moveShots : State -> State
+moveShots state = {state | shotsP = L.map (\s -> {s | x=s.x, y=s.y+5}) state.shotsP
+                         , shotsE = state.shotsE }
 
 view : State -> E.Element
 view state = C.collage 900 500 ( [ C.filled Color.black (C.rect 900 500)
@@ -79,12 +90,12 @@ playerpos : Int -> (Float, Float)
 playerpos pX = (56+toFloat pX*8, 80)
 enemy : Enemy -> C.Form
 -- http://www.wolframalpha.com/input/?i=InterpolatingPolynomial%5B%7B%7B1%2C+24%7D%2C+%7B2%2C+32%7D%2C+%7B3%2C+36%7D%7D%2C+x%5D
-enemy e = let f x = 24 + (8 - 2 * (x-2)) * (x-1)
-          in zero e.pos (C.toForm (E.image (f e.kind) 24 ("img/enemy"++toString e.kind++"a3.png")))
+enemy e = let width x = 24 + (8 - 2 * (x-2)) * (x-1)
+          in zero e.pos (C.toForm (E.image (width e.kind) 24 ("img/enemy"++toString e.kind++"a3.png")))
 shotP : Shot -> C.Form
-shotP s = zero s.pos (C.toForm (E.image 6 12 "img/playershot.png"))
+shotP s = zero (s.x,s.y) (C.toForm (E.image 6 12 "img/playershot.png"))
 shotE : Shot -> C.Form
-shotE s = zero s.pos (C.toForm (E.image 6 12 "img/enemyshot.png"))
+shotE s = zero (s.x,s.y) (C.toForm (E.image 6 12 "img/enemyshot.png"))
 zero : (Float, Float) -> C.Form -> C.Form
 zero (x,y) f = C.move (x,y) (C.move (-450,-250) f)
 
