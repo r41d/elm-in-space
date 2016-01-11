@@ -19,8 +19,10 @@ type alias State = -- game state
 
 type alias Enemy = 
   { pos  : (Float,Float)
-  , kind : Int
+  , kind : Int -- 1,2,3 -- specifies sprite
   }
+
+-- type EnemyType = Bot | Mid | Top | Ufo
 
 type alias Shot = 
   { pos    : (Float,Float)
@@ -28,25 +30,12 @@ type alias Shot =
 
 type Action = Left | Right | Shoot | Nothing
 
-
-{-
-for x in range(0,150,15):
-	for y in range(0, 90, 15):
-		kind = y/R(Y*0.06)+1
-		anim = 'a'
-		sprite("enemy"+str(kind)+anim+"3")
-		inv.rect.center = (70+5*x, 100+2*y)
--}
-
--- map2 : (a -> b -> result) -> List a -> List b -> List result
--- map2 (,) [1,2,3] ['a','b'] == [ (1,'a'), (2,'b') ]
-
 initEnemies : List Enemy
 initEnemies =
   let xlist = L.map (\x->x*15) [0..9]
       ylist = L.map (\x->x*15) [0..5]
       pp x y = (toFloat (70+5*x), toFloat (280+2*y)) -- position formula
-      kk y = y // round (resY*0.06) +1 -- kind formula
+      kk y = (y) // round (resY*0.06) +1 -- kind formula
   in LE.lift2 (\x y -> {pos = pp x y, kind = kk y }) xlist ylist
 
 initial : State
@@ -89,11 +78,13 @@ player pX = zero (playerpos pX) (C.toForm (E.image 52 32 "img/player.png"))
 playerpos : Int -> (Float, Float)
 playerpos pX = (56+toFloat pX*8, 80)
 enemy : Enemy -> C.Form
-enemy e = zero e.pos (C.toForm (E.image 24 24 ("img/emeny"++toString e.kind++"a3.png")))
+-- http://www.wolframalpha.com/input/?i=InterpolatingPolynomial%5B%7B%7B1%2C+24%7D%2C+%7B2%2C+32%7D%2C+%7B3%2C+36%7D%7D%2C+x%5D
+enemy e = let f x = 24 + (8 - 2 * (x-2)) * (x-1)
+          in zero e.pos (C.toForm (E.image (f e.kind) 24 ("img/enemy"++toString e.kind++"a3.png")))
 shotP : Shot -> C.Form
-shotP s = zero s.pos (C.toForm ( E.image 6 12 "img/playershot.png"))
+shotP s = zero s.pos (C.toForm (E.image 6 12 "img/playershot.png"))
 shotE : Shot -> C.Form
-shotE s = zero s.pos (C.toForm ( E.image 6 12 "img/enemyshot.png"))
+shotE s = zero s.pos (C.toForm (E.image 6 12 "img/enemyshot.png"))
 zero : (Float, Float) -> C.Form -> C.Form
 zero (x,y) f = C.move (x,y) (C.move (-450,-250) f)
 
