@@ -4,6 +4,10 @@ import Signal
 import Keyboard
 import Time
 import Color
+import List as L
+
+resX = 900
+resY = 500
 
 type alias State = -- game state
   { playerX : Int
@@ -23,9 +27,25 @@ type alias Shot =
 
 type Action = Left | Right | Shoot | Nothing
 
+
+{-
+for x in range(0,150,15):
+	for y in range(0, 90, 15):
+		kind = y/R(Y*0.06)+1
+		anim = 'a'
+		sprite("enemy"+str(kind)+anim+"3")
+		inv.rect.center = (70+5*x, 100+2*y)
+-}
+
+-- map2 : (a -> b -> result) -> List a -> List b -> List result
+-- map2 (,) [1,2,3] ['a','b'] == [ (1,'a'), (2,'b') ]
+
+initEnemies : List Enemy
+initEnemies = L.map2 (\x y -> {pos = (toFloat (70+5*x), toFloat (100+2*y)), kind = y // round (resY*0.06) +1 }) (L.map (\x->x*15) [0..9]) (L.map (\x->x*15) [0..5])
+
 initial : State
 initial = { playerX = 0
-          , enemies = []
+          , enemies = initEnemies
           , shotsP = []
           , shotsE = []
           }
@@ -48,9 +68,9 @@ view state = C.collage 900 500 ( [ C.filled Color.black (C.rect 900 500)
                                  , player state.playerX
                                  , C.toForm (E.color Color.red (E.show state))
                                  ]
-                                 ++ (List.map (\e -> enemy e) state.enemies)
-                                 ++ (List.map (\s -> shotP s) state.shotsP)
-                                 ++ (List.map (\s -> shotE s) state.shotsE)
+                                 ++ (List.map enemy state.enemies)
+                                 ++ (List.map shotP state.shotsP)
+                                 ++ (List.map shotE state.shotsE)
                                )
 
 main : Signal E.Element
