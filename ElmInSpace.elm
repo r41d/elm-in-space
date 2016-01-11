@@ -5,6 +5,7 @@ import Keyboard
 import Time
 import Color
 import List as L
+import List.Extra as LE
 
 resX = 900
 resY = 500
@@ -41,7 +42,12 @@ for x in range(0,150,15):
 -- map2 (,) [1,2,3] ['a','b'] == [ (1,'a'), (2,'b') ]
 
 initEnemies : List Enemy
-initEnemies = L.map2 (\x y -> {pos = (toFloat (70+5*x), toFloat (100+2*y)), kind = y // round (resY*0.06) +1 }) (L.map (\x->x*15) [0..9]) (L.map (\x->x*15) [0..5])
+initEnemies =
+  let xlist = L.map (\x->x*15) [0..9]
+      ylist = L.map (\x->x*15) [0..5]
+      pp x y = (toFloat (70+5*x), toFloat (280+2*y)) -- position formula
+      kk y = y // round (resY*0.06) +1 -- kind formula
+  in LE.lift2 (\x y -> {pos = pp x y, kind = kk y }) xlist ylist
 
 initial : State
 initial = { playerX = 0
@@ -66,7 +72,7 @@ update act state = if act == Left
 view : State -> E.Element
 view state = C.collage 900 500 ( [ C.filled Color.black (C.rect 900 500)
                                  , player state.playerX
-                                 , C.toForm (E.color Color.red (E.show state))
+                                 , C.toForm << E.color Color.red <| E.show state
                                  ]
                                  ++ (List.map enemy state.enemies)
                                  ++ (List.map shotP state.shotsP)
