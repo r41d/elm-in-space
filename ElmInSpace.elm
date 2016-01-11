@@ -3,6 +3,7 @@ import Graphics.Element as E
 import Signal
 import Keyboard
 import Time
+import Color
 
 type alias State = -- game state
   { playerX : Int
@@ -43,8 +44,10 @@ update act state = if act == Left
                      state
 
 view : State -> E.Element
-view state = C.collage 900 500 ( [player state.playerX
-                                 , C.toForm (E.show state)]
+view state = C.collage 900 500 ( [ C.filled Color.black (C.rect 900 500)
+                                 , player state.playerX
+                                 , C.toForm (E.color Color.red (E.show state))
+                                 ]
                                  ++ (List.map (\e -> enemy e) state.enemies)
                                  ++ (List.map (\s -> shotP s) state.shotsP)
                                  ++ (List.map (\s -> shotE s) state.shotsE)
@@ -58,7 +61,7 @@ main = Signal.map view (Signal.foldp update initial input)
 player : Int -> C.Form
 player pX = zero (playerpos pX) (C.toForm (E.image 52 32 "img/player.png"))
 playerpos : Int -> (Float, Float)
-playerpos pX = (48+toFloat pX*8, 80)
+playerpos pX = (56+toFloat pX*8, 80)
 enemy : Enemy -> C.Form
 enemy e = zero e.pos (C.toForm (E.image 24 24 ("img/emeny"++toString e.kind++"a3.png")))
 shotP : Shot -> C.Form
