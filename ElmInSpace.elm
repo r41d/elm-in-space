@@ -35,7 +35,7 @@ initEnemies : List Enemy
 initEnemies =
   let xlist = L.map (\x->x*15) [0..9]
       ylist = L.map (\x->x*15) [0..5]
-      pp x y = (toFloat (70+5*x), toFloat (280+2*y)) -- position formula
+      pp x y = (toFloat (70+5*x), toFloat (100+2*y)) -- position formula
       kk y = y // round (resY*0.06) + 1 -- kind formula
   in LE.lift2 (\x y -> {pos = pp x y, kind = kk y }) xlist ylist
 
@@ -47,8 +47,9 @@ initial = { playerX = 0
           }
 
 update : Action -> State -> State
-update act state = let s2 = processInput act state
-                   in moveShots s2
+update act state = processInput act state |>
+                   (moveShots >> filterDeadShots) |>
+                   (moveEnemies >> letEnemiesShoot)
 
 processInput : Action -> State -> State
 processInput act state = if act == Left
@@ -59,15 +60,27 @@ processInput act state = if act == Left
                            { state | playerX = state.playerX+1 }
                          else if act == Shoot
                           then
-                           { state | shotsP = (newshot state :: state.shotsP) }
+                           { state | shotsP = (newplayershot state :: state.shotsP) }
                          else
                            state
 
-newshot s = let z = playerpos s.playerX in {x = fst z, y = snd z}
+newplayershot : State -> Shot
+newplayershot s = let z = playerpos s.playerX in {x = fst z, y = snd z}
 
 moveShots : State -> State
-moveShots state = {state | shotsP = L.map (\s -> {s | x=s.x, y=s.y+5}) state.shotsP
-                         , shotsE = state.shotsE }
+moveShots state = {state | shotsP = L.map (\s -> {s | y=s.y-5}) state.shotsP
+                         , shotsE = L.map (\s -> {s | y=s.y+5}) state.shotsE }
+
+filterDeadShots : State -> State
+filterDeadShots state = {state | shotsP = L.filter (\s -> s.y >  0 ) state.shotsP
+                               , shotsE = L.filter (\s -> s.y < 500) state.shotsE }
+
+moveEnemies : State -> State
+moveEnemies s = s
+
+letEnemiesShoot : State -> State
+letEnemiesShoot s = s
+
 
 view : State -> E.Element
 view state = C.collage 900 500 ( [ C.filled Color.black (C.rect 900 500)
@@ -87,7 +100,7 @@ main = Signal.map view (Signal.foldp update initial input)
 player : Int -> C.Form
 player pX = zero (playerpos pX) (C.toForm (E.image 52 32 "img/player.png"))
 playerpos : Int -> (Float, Float)
-playerpos pX = (56+toFloat pX*8, 80)
+playerpos pX = (56+toFloat pX*8, 450)
 enemy : Enemy -> C.Form
 -- http://www.wolframalpha.com/input/?i=InterpolatingPolynomial%5B%7B%7B1%2C+24%7D%2C+%7B2%2C+32%7D%2C+%7B3%2C+36%7D%7D%2C+x%5D
 enemy e = let width x = 24 + (8 - 2 * (x-2)) * (x-1)
@@ -96,8 +109,9 @@ shotP : Shot -> C.Form
 shotP s = zero (s.x,s.y) (C.toForm (E.image 6 12 "img/playershot.png"))
 shotE : Shot -> C.Form
 shotE s = zero (s.x,s.y) (C.toForm (E.image 6 12 "img/enemyshot.png"))
+-- makes top left corner the (0,0) origin
 zero : (Float, Float) -> C.Form -> C.Form
-zero (x,y) f = C.move (x,y) (C.move (-450,-250) f)
+zero (x,y) f = C.move (x,-y) (C.move (-450,250) f)
 
 -- Input
 input : Signal Action
