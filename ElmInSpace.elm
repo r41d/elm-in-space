@@ -20,6 +20,8 @@ resY = 540
 clock = Time.fps 30
 corpseTime = 15 -- specify how long corpses exist
 shotCoefficient = 5 --  0-100, 0 = no shots, 100 = hellfire
+maxShots = 5
+chargeGrantCoefficient = 60 -- 1-1000, 1=always full shots, 30=every second, 60=every two seconds, ...
 bitchMode = True -- missed shots come back at you
 
 {-
@@ -29,11 +31,15 @@ bitchMode = True -- missed shots come back at you
 type alias World = -- game world
   { playerX : Int
   , lives   : Int
+  , charge  : Int -- number of shots available
+
   , enemies : List Enemy
   , foeDir  : Direction
-  , animcnt : Int
+  , counter : Int
+
   , shotsP  : List Shot
   , shotsE  : List Shot
+
   , seed    : R.Seed -- meh
   }
 
@@ -41,6 +47,8 @@ aliveEnemies : World -> List Enemy
 aliveEnemies w = L.filter (\e -> e.live < 0) w.enemies
 deadEnemies : World -> List Enemy
 deadEnemies w = L.filter (\e -> e.live >= 0) w.enemies
+animcnt : World -> Int
+animcnt w = w.counter % 40
 
 --               left | rght | down remaining nextDirection
 type Direction = DirL | DirR | DirD Int Direction
@@ -76,9 +84,10 @@ initEnemies =
 initial : World
 initial = { playerX = 0
           , lives   = 3
+          , charge  = maxShots
           , enemies = initEnemies
           , foeDir = DirR
-          , animcnt = 0
+          , counter = 0
           , shotsP = []
           , shotsE = [{x=50,y=0}]
           , seed = R.initialSeed 5014
@@ -98,20 +107,24 @@ update act world = processInput act world
                    >> shotEnemyCollision
                    >> shotPlayerCollision
                    >> handleCorpses
-                   >> \world -> {world | animcnt = (world.animcnt + 1) % 40}
+                   >> grantCharge
+                   >> \world -> {world | counter = (world.counter + 1) % 1200}
 
 processInput : Action -> World -> World
-processInput act world = if act == LeftAction
-                          then
-                           { world | playerX = max 0 (world.playerX - 1) }
-                         else if act == RightAction
-                          then
-                           { world | playerX = min 105 (world.playerX + 1) }
-                         else if act == ShootAction
-                          then
-                           { world | shotsP = (newplayershot world :: world.shotsP) }
-                         else
-                           world
+processInput act world =
+  if act == LeftAction
+    then { world | playerX = max 0 (world.playerX - 1) }
+    else
+      if act == RightAction
+        then { world | playerX = min 105 (world.playerX + 1) }
+        else
+          if act == ShootAction
+            then
+              if world.charge > 0
+                then { world | charge = world.charge - 1
+                             , shotsP = (newplayershot world :: world.shotsP) }
+                else world
+          else world
 
 newplayershot : World -> Shot
 newplayershot s = let ppos = playerpos s.playerX
@@ -194,8 +207,10 @@ shotEnemyCollision world =
       playerShotsRects = L.map shotrect world.shotsP
       hitByShot e = L.any (\sr -> Coll.axisAlignedBoundingBox (enemyrect e) sr) playerShotsRects
       hitAnEnemy s = L.any (\er -> Coll.axisAlignedBoundingBox (shotrect s) er) enemyRects
-  in {world | enemies = unfilter hitByShot world.enemies
-                        ++ L.map (\e -> {e | live = corpseTime}) (L.filter hitByShot world.enemies)
+      hitEnemies = L.filter hitByShot (aliveEnemies world)
+  in {world | charge = min maxShots (world.charge + L.length hitEnemies)
+            , enemies = unfilter hitByShot world.enemies
+                        ++ L.map (\e -> {e | live = corpseTime}) hitEnemies
             , shotsP = unfilter hitAnEnemy world.shotsP }
 
 shotPlayerCollision : World -> World -- collide enemy shots with the player
@@ -206,12 +221,23 @@ shotPlayerCollision world =
   in {world | lives = if playerHit then world.lives - 1 else world.lives
             , shotsE = unfilter hitThePlayer world.shotsE}
 
+
+{-
+ - ORGANIZATION
+ -}
+
 handleCorpses : World -> World
 handleCorpses world =
   let (dead, alive) = L.partition (\e -> e.live >= 0) world.enemies -- split corpses and alive enemies
       deader = L.map (\e -> {e | live = e.live - 1}) dead -- decrement .live for corpses
       deadest = L.filter (\e -> e.live > 0) deader
   in {world | enemies = deadest ++ alive }
+
+grantCharge : World -> World
+grantCharge world =
+  if world.counter % chargeGrantCoefficient == 0
+    then {world | charge = min maxShots (world.charge+1)}
+    else world
 
 {-
  - VIEW
@@ -235,7 +261,7 @@ playerpos : Int -> (Float, Float)
 playerpos pX = (32+toFloat pX*8, 460)
 -- http://www.wolframalpha.com/input/?i=InterpolatingPolynomial%5B%7B%7B1%2C+24%7D%2C+%7B2%2C+32%7D%2C+%7B3%2C+36%7D%7D%2C+x%5D
 enemywidth x = 24 + (8 - 2 * (x-2)) * (x-1) -- enemy_kind -> int
-ab w = if w.animcnt <= 20 then "a" else "b"
+ab w = if animcnt w <= 20 then "a" else "b"
 deadenemy = E.image 36 24 "img/dead3.png"
 livingenemy w e = E.image (enemywidth e.kind) 24 ("img/enemy"++toString e.kind++ab w++"3.png")
 enemy : World -> Enemy -> C.Form
