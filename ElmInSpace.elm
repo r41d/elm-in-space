@@ -8,12 +8,24 @@ import List as L
 import List.Extra as LE
 import Collision2D as Coll
 
+
+{-
+ - CONFIG
+ -}
+
 -- Resolution: Quarter of Full HD
 resX = 960
 resY = 540
+fps = 30
+
+
+{-
+ - DATA
+ -}
 
 type alias State = -- game state
   { playerX : Int
+  , lives   : Int
   , enemies : List Enemy
   , nextDir : Direction
   , shotsP  : List Shot
@@ -36,6 +48,11 @@ type alias Shot = -- x y cooridinates spcify the center of the sprite
 
 type Action = Left | Right | Shoot | Nothing
 
+
+{-
+ - INIT
+ -}
+
 initEnemies : List Enemy
 initEnemies =
   let xlist = L.map (\x->x*15) [0..9]
@@ -47,11 +64,17 @@ initEnemies =
 
 initial : State
 initial = { playerX = 0
+          , lives   = 3
           , enemies = initEnemies
           , nextDir = DirR
           , shotsP = []
-          , shotsE = []
+          , shotsE = [{x=50,y=0}]
           }
+
+
+{-
+ - UPDATE
+ -}
 
 update : Action -> State -> State
 update act state = processInput act state
@@ -60,6 +83,7 @@ update act state = processInput act state
                    >> moveEnemies
                    >> letEnemiesShoot
                    >> shotEnemyCollision
+                   >> shotPlayerCollision
 
 processInput : Action -> State -> State
 processInput act state = if act == Left
@@ -75,7 +99,8 @@ processInput act state = if act == Left
                            state
 
 newplayershot : State -> Shot
-newplayershot s = let z = playerpos s.playerX in {x = fst z, y = snd z}
+newplayershot s = let ppos = playerpos s.playerX
+                  in {x = fst ppos, y = snd ppos - 15}
 
 moveShots : State -> State
 moveShots state = {state | shotsP = L.map (\s -> {s | y=s.y-5}) state.shotsP
@@ -91,29 +116,46 @@ moveEnemies s = s
 letEnemiesShoot : State -> State
 letEnemiesShoot s = s
 
+{-
+ - COLLISION
+ -}
+
+playerrect state = Coll.rectangle (fst (playerpos state.playerX)) (snd (playerpos state.playerX)) 52 32
+enemyrect e = Coll.rectangle e.x e.y (toFloat (enemywidth e.kind)) 24
+shotrect s = Coll.rectangle s.x s.y 6 12
+
+
 shotEnemyCollision : State -> State -- collide player shots with enemies
 shotEnemyCollision state =
-  let enemyrect e = Coll.rectangle e.x e.y (toFloat (enemywidth e.kind)) 24
-      shotrect s = Coll.rectangle s.x s.y 6 12
-      shotrectangles = L.map shotrect state.shotsP
-      -- any : (a -> Bool) -> List a -> Bool
-      collidesWithShot e = L.any (\sr -> Coll.axisAlignedBoundingBox (enemyrect e) sr) shotrectangles
-  in {state | enemies = unfilter collidesWithShot state.enemies }
+  let enemyRects = L.map enemyrect state.enemies
+      playerShotsRects = L.map shotrect state.shotsP
+      hitByShot e = L.any (\sr -> Coll.axisAlignedBoundingBox (enemyrect e) sr) playerShotsRects
+      hitAnEnemy s = L.any (\er -> Coll.axisAlignedBoundingBox (shotrect s) er) enemyRects
+  in {state | enemies = unfilter hitByShot state.enemies
+            , shotsP = unfilter hitAnEnemy state.shotsP }
 
+shotPlayerCollision : State -> State -- collide enemy shots with the player
+shotPlayerCollision state =
+  let enemyShotsRects = L.map shotrect state.shotsE
+      playerHit = L.any (\sr -> Coll.axisAlignedBoundingBox (playerrect state) sr) enemyShotsRects
+      hitThePlayer s = Coll.axisAlignedBoundingBox (playerrect state) (shotrect s)
+  in {state | lives = if playerHit then state.lives - 1 else state.lives
+            , shotsE = unfilter hitThePlayer state.shotsE}
+
+
+{-
+ - VIEW
+ -}
 
 view : State -> E.Element
 view state = C.collage resX resY ( [ C.filled Color.black (C.rect resX resY)
                                  , player state.playerX
-                                 , C.toForm << E.color Color.red <| E.show state
+                                 , C.toForm << E.color Color.blue <| E.show state
                                  ]
                                  ++ (List.map enemy state.enemies)
                                  ++ (List.map shotP state.shotsP)
                                  ++ (List.map shotE state.shotsE)
                                )
-
-main : Signal E.Element
-main = Signal.map view (Signal.foldp update initial input)
-
 
 -- Sprites
 player : Int -> C.Form
@@ -132,13 +174,17 @@ shotE s = zero (s.x,s.y) (C.toForm (E.image 6 12 "img/enemyshot.png"))
 zero : (Float, Float) -> C.Form -> C.Form
 zero (x,y) f = C.move (x,-y) (C.move (-450,250) f)
 
--- Input
+
+{-
+ - INPUT
+ -}
+
 input : Signal Action
 input = Signal.merge leftNright space
 
 -- sampleOn : Signal a -> Signal b -> Signal b
 leftNright : Signal Action
-leftNright = Signal.sampleOn clocker
+leftNright = Signal.sampleOn (Time.fps fps)
                (Signal.map
                  (\ v -> if v == {x=-1, y=0} then Left
                          else if v == {x=1, y=0} then Right
@@ -149,12 +195,17 @@ space : Signal Action
 space = Signal.map (\v -> if v == True then Shoot else Nothing) Keyboard.space
 
 
-clocker = Time.fps 30
+{-
+ - MAIN
+ -}
+
+main : Signal E.Element
+main = Signal.map view (Signal.foldp update initial input)
 
 
-
------- Util
-
+{-
+ - UTIL
+ -}
 
 -- Keep only elements that DON'T satisfy the predicate.
 unfilter : (a -> Bool) -> List a -> List a
