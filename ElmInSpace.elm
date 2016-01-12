@@ -16,8 +16,8 @@ import Collision2D as Coll
 -- Resolution: Quarter of Full HD
 resX = 960
 resY = 540
-fps = 30
-
+clock = Time.fps 30
+bitchMode = True -- missed shots come back at you
 
 {-
  - DATA
@@ -28,10 +28,12 @@ type alias World = -- game world
   , lives   : Int
   , enemies : List Enemy
   , foeDir  : Direction
+  , animcnt : Int
   , shotsP  : List Shot
   , shotsE  : List Shot
   }
 
+--               left | rght | down remaining nextDirection
 type Direction = DirL | DirR | DirD Int Direction
 
 type alias Enemy = -- x y cooridinates spcify the center of the sprite
@@ -57,8 +59,8 @@ initEnemies : List Enemy
 initEnemies =
   let xlist = L.map (\x->x*15) [0..9]
       ylist = L.map (\x->x*15) [0..5]
-      ppx x = 60+5 * toFloat x -- position formulas
-      ppy y = 80+2.5 * toFloat y
+      ppx x = 40+5 * toFloat x -- position formulas
+      ppy y = 40+2.5 * toFloat y
       kk y = y // 30 + 1 -- kind formula
   in LE.lift2 (\xx yy -> {x = ppx xx, y = ppy yy, kind = kk yy, alive = True}) xlist ylist
 
@@ -67,6 +69,7 @@ initial = { playerX = 0
           , lives   = 3
           , enemies = initEnemies
           , foeDir = DirR
+          , animcnt = 0
           , shotsP = []
           , shotsE = [{x=50,y=0}]
           }
@@ -84,6 +87,7 @@ update act world = processInput act world
                    >> letEnemiesShoot
                    >> shotEnemyCollision
                    >> shotPlayerCollision
+                   >> \world -> {world | animcnt = (world.animcnt + 1) % 1000}
 
 processInput : Action -> World -> World
 processInput act world = if act == LeftAction
@@ -107,34 +111,41 @@ moveShots world = {world | shotsP = L.map (\s -> {s | y=s.y-5}) world.shotsP
                          , shotsE = L.map (\s -> {s | y=s.y+5}) world.shotsE }
 
 filterDeadShots : World -> World
-filterDeadShots world = {world | shotsP = unfilter (\s -> s.y <  -50) world.shotsP
-                               , shotsE = unfilter (\s -> s.y > resY) world.shotsE }
+filterDeadShots world = {world | shotsP = unfilter (\s -> s.y < -20) world.shotsP
+                               , shotsE = (unfilter (\s -> s.y > resY) world.shotsE)
+                                          ++ if bitchMode then L.filter (\s -> s.y < -20) world.shotsP else []}
 
 moveEnemies : World -> World
 moveEnemies world =
   let xmin = L.minimum (L.map .x world.enemies)
       xmax = L.maximum (L.map .x world.enemies)
       ymax = L.maximum (L.map .y world.enemies)
-      moveEnemy e x' y' = {e | x=e.x+x', y=e.y+y'}
+      moveSingleEnemy e x' y' = {e | x=e.x+x',  y=e.y+y'}
+      moveAllLeft = L.map (\e -> moveSingleEnemy e -2 0) world.enemies
+      moveAllRight = L.map (\e -> moveSingleEnemy e 2 0) world.enemies
+      moveAllDown = L.map (\e -> moveSingleEnemy e 0 1) world.enemies
+      invAtBottom y = y >= 380
+      invAtLeftEdge x = x <= 30
+      invAtRightEdge x = x >= resX-100
+      -- somewhat of code duplication, TODO: figure out a readable(!) shorter alternative
+      onlyLR = -- only move left to right
+        case world.foeDir of
+          DirL     -> {world | enemies = moveAllLeft
+                             , foeDir = maybeCondition xmin invAtLeftEdge DirR world.foeDir}
+          DirR     -> {world | enemies = moveAllRight
+                             , foeDir = maybeCondition xmax invAtRightEdge DirL world.foeDir}
+          DirD _ d -> {world | foeDir = d} -- stop moving down and just turn to the next direction
+      nextdir = -- also move down when reaching the left/right border
+        case world.foeDir of
+          DirL     -> {world | enemies = moveAllLeft
+                             , foeDir = maybeCondition xmin invAtLeftEdge (DirD 10 DirR) world.foeDir}
+          DirR     -> {world | enemies = moveAllRight
+                             , foeDir = maybeCondition xmax invAtRightEdge (DirD 12 DirL) world.foeDir}
+          DirD 0 d -> {world | foeDir = d}
+          DirD i d -> {world | enemies = moveAllDown
+                             , foeDir = DirD (i-1) d}
   in
-    case world.foeDir of
-      DirL     -> {world | enemies = L.map (\e -> moveEnemy e -1 0) world.enemies
-                         , foeDir = maybePredicateIfElse xmin (\minx -> minx < 20) (DirD 10 DirR) world.foeDir}
-      DirR     -> {world | enemies = L.map (\e -> moveEnemy e 1 0) world.enemies
-                         , foeDir = maybePredicateIfElse xmax (\maxx -> maxx > (resX-100)) (DirD 12 DirL) world.foeDir}
-      DirD 0 d -> {world | foeDir = d}
-      DirD i d -> {world | enemies = L.map (\e -> moveEnemy e 0 1) world.enemies
-                         , foeDir = DirD (i-1) d}
-
-
-{-| Return the second last argument is the Maybe if Just and the predicate is true.
-    Return the last argument if the Maybe is Nothing or if the predicate is not true.
--}
-maybePredicateIfElse : Maybe a -> (a -> Bool) -> b -> b -> b
-maybePredicateIfElse m f b1 b2 =
-  case m of
-    Just a  -> if f a then b1 else b2
-    Nothing -> b2
+    if maybeCondition ymax invAtBottom True False then onlyLR else nextdir
 
 
 letEnemiesShoot : World -> World
@@ -209,7 +220,7 @@ input = Signal.merge leftNright space
 
 -- sampleOn : Signal a -> Signal b -> Signal b
 leftNright : Signal Action
-leftNright = Signal.sampleOn (Time.fps fps)
+leftNright = Signal.sampleOn clock
                (Signal.map
                  (\ v -> if v == {x=-1, y=0} then LeftAction
                          else if v == {x=1, y=0} then RightAction
@@ -229,9 +240,22 @@ main = Signal.map view (Signal.foldp update initial input)
 
 
 {-
- - UTIL
+ - UTIL - I hope i can get rid of these once they are added to the 3rd party Libraries
  -}
 
--- Keep only elements that DON'T satisfy the predicate.
+-- circuithub/elm-list-extra contains this on master (as `removeWhen`) but not in the latest release
+{-| Keep only elements that DON'T satisfy the predicate.
+-}
 unfilter : (a -> Bool) -> List a -> List a
 unfilter p l = L.filter (\a -> not (p a)) l
+
+-- I already sent a pull request to circuithub/elm-maybe-extra
+{-| Take a Maybe, a predicate and two values of Type b.
+    Return the first b is the `Maybe` if `Just` and the predicate evaluates to true.
+    Return the second b if the `Maybe` is `Nothing` or if the predicate evaluates to false.
+-}
+maybeCondition : Maybe a -> (a -> Bool) -> b -> b -> b
+maybeCondition m f b1 b2 =
+  case m of
+    Just a  -> if f a then b1 else b2
+    Nothing -> b2
