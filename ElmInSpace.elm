@@ -27,12 +27,12 @@ type alias World = -- game world
   { playerX : Int
   , lives   : Int
   , enemies : List Enemy
-  , nextDir : Direction
+  , foeDir  : Direction
   , shotsP  : List Shot
   , shotsE  : List Shot
   }
 
-type Direction = DirL | DirR | DirD
+type Direction = DirL | DirR | DirD Int Direction
 
 type alias Enemy = -- x y cooridinates spcify the center of the sprite
   { x     : Float
@@ -46,7 +46,7 @@ type alias Shot = -- x y cooridinates spcify the center of the sprite
   , y : Float
   }
 
-type Action = Left | Right | Shoot | Nothing
+type Action = LeftAction | RightAction | ShootAction | NothingAction
 
 
 {-
@@ -66,7 +66,7 @@ initial : World
 initial = { playerX = 0
           , lives   = 3
           , enemies = initEnemies
-          , nextDir = DirR
+          , foeDir = DirR
           , shotsP = []
           , shotsE = [{x=50,y=0}]
           }
@@ -86,13 +86,13 @@ update act world = processInput act world
                    >> shotPlayerCollision
 
 processInput : Action -> World -> World
-processInput act world = if act == Left
+processInput act world = if act == LeftAction
                           then
                            { world | playerX = max 0 (world.playerX-1) }
-                         else if act == Right
+                         else if act == RightAction
                           then
                            { world | playerX = min 105 (world.playerX+1) }
-                         else if act == Shoot
+                         else if act == ShootAction
                           then
                            { world | shotsP = (newplayershot world :: world.shotsP) }
                          else
@@ -111,10 +111,35 @@ filterDeadShots world = {world | shotsP = unfilter (\s -> s.y <  -50) world.shot
                                , shotsE = unfilter (\s -> s.y > resY) world.shotsE }
 
 moveEnemies : World -> World
-moveEnemies world = {world | enemies = world.enemies}
+moveEnemies world =
+  let xmin = L.minimum (L.map .x world.enemies)
+      xmax = L.maximum (L.map .x world.enemies)
+      ymax = L.maximum (L.map .y world.enemies)
+      moveEnemy e x' y' = {e | x=e.x+x', y=e.y+y'}
+  in
+    case world.foeDir of
+      DirL     -> {world | enemies = L.map (\e -> moveEnemy e -1 0) world.enemies
+                         , foeDir = maybePredicateIfElse xmin (\minx -> minx < 20) (DirD 10 DirR) world.foeDir}
+      DirR     -> {world | enemies = L.map (\e -> moveEnemy e 1 0) world.enemies
+                         , foeDir = maybePredicateIfElse xmax (\maxx -> maxx > (resX-100)) (DirD 12 DirL) world.foeDir}
+      DirD 0 d -> {world | foeDir = d}
+      DirD i d -> {world | enemies = L.map (\e -> moveEnemy e 0 1) world.enemies
+                         , foeDir = DirD (i-1) d}
+
+
+{-| Return the second last argument is the Maybe if Just and the predicate is true.
+    Return the last argument if the Maybe is Nothing or if the predicate is not true.
+-}
+maybePredicateIfElse : Maybe a -> (a -> Bool) -> b -> b -> b
+maybePredicateIfElse m f b1 b2 =
+  case m of
+    Just a  -> if f a then b1 else b2
+    Nothing -> b2
+
 
 letEnemiesShoot : World -> World
 letEnemiesShoot s = s
+
 
 {-
  - COLLISION
@@ -186,13 +211,13 @@ input = Signal.merge leftNright space
 leftNright : Signal Action
 leftNright = Signal.sampleOn (Time.fps fps)
                (Signal.map
-                 (\ v -> if v == {x=-1, y=0} then Left
-                         else if v == {x=1, y=0} then Right
-                         else Nothing)
+                 (\ v -> if v == {x=-1, y=0} then LeftAction
+                         else if v == {x=1, y=0} then RightAction
+                         else NothingAction)
                  Keyboard.arrows)
                --(Signal.filter (\ v -> v.y == 0) {x=0, y=0} Keyboard.arrows)
 space : Signal Action
-space = Signal.map (\v -> if v == True then Shoot else Nothing) Keyboard.space
+space = Signal.map (\v -> if v == True then ShootAction else NothingAction) Keyboard.space
 
 
 {-
