@@ -23,7 +23,7 @@ fps = 30
  - DATA
  -}
 
-type alias State = -- game state
+type alias World = -- game world
   { playerX : Int
   , lives   : Int
   , enemies : List Enemy
@@ -62,7 +62,7 @@ initEnemies =
       kk y = y // 30 + 1 -- kind formula
   in LE.lift2 (\xx yy -> {x = ppx xx, y = ppy yy, kind = kk yy, alive = True}) xlist ylist
 
-initial : State
+initial : World
 initial = { playerX = 0
           , lives   = 3
           , enemies = initEnemies
@@ -76,8 +76,8 @@ initial = { playerX = 0
  - UPDATE
  -}
 
-update : Action -> State -> State
-update act state = processInput act state
+update : Action -> World -> World
+update act world = processInput act world
                    |> moveShots
                    >> filterDeadShots
                    >> moveEnemies
@@ -85,76 +85,76 @@ update act state = processInput act state
                    >> shotEnemyCollision
                    >> shotPlayerCollision
 
-processInput : Action -> State -> State
-processInput act state = if act == Left
+processInput : Action -> World -> World
+processInput act world = if act == Left
                           then
-                           { state | playerX = max 0 (state.playerX-1) }
+                           { world | playerX = max 0 (world.playerX-1) }
                          else if act == Right
                           then
-                           { state | playerX = min 105 (state.playerX+1) }
+                           { world | playerX = min 105 (world.playerX+1) }
                          else if act == Shoot
                           then
-                           { state | shotsP = (newplayershot state :: state.shotsP) }
+                           { world | shotsP = (newplayershot world :: world.shotsP) }
                          else
-                           state
+                           world
 
-newplayershot : State -> Shot
+newplayershot : World -> Shot
 newplayershot s = let ppos = playerpos s.playerX
                   in {x = fst ppos, y = snd ppos - 15}
 
-moveShots : State -> State
-moveShots state = {state | shotsP = L.map (\s -> {s | y=s.y-5}) state.shotsP
-                         , shotsE = L.map (\s -> {s | y=s.y+5}) state.shotsE }
+moveShots : World -> World
+moveShots world = {world | shotsP = L.map (\s -> {s | y=s.y-5}) world.shotsP
+                         , shotsE = L.map (\s -> {s | y=s.y+5}) world.shotsE }
 
-filterDeadShots : State -> State
-filterDeadShots state = {state | shotsP = unfilter (\s -> s.y <  -50) state.shotsP
-                               , shotsE = unfilter (\s -> s.y > resY) state.shotsE }
+filterDeadShots : World -> World
+filterDeadShots world = {world | shotsP = unfilter (\s -> s.y <  -50) world.shotsP
+                               , shotsE = unfilter (\s -> s.y > resY) world.shotsE }
 
-moveEnemies : State -> State
-moveEnemies state = {state | enemies = state.enemies}
+moveEnemies : World -> World
+moveEnemies world = {world | enemies = world.enemies}
 
-letEnemiesShoot : State -> State
+letEnemiesShoot : World -> World
 letEnemiesShoot s = s
 
 {-
  - COLLISION
  -}
 
-playerrect state = Coll.rectangle (fst (playerpos state.playerX)) (snd (playerpos state.playerX)) 52 32
+playerrect world = Coll.rectangle (fst (playerpos world.playerX)) (snd (playerpos world.playerX)) 52 32
 enemyrect e = Coll.rectangle e.x e.y (toFloat (enemywidth e.kind)) 24
 shotrect s = Coll.rectangle s.x s.y 6 12
 
 
-shotEnemyCollision : State -> State -- collide player shots with enemies
-shotEnemyCollision state =
-  let enemyRects = L.map enemyrect state.enemies
-      playerShotsRects = L.map shotrect state.shotsP
+shotEnemyCollision : World -> World -- collide player shots with enemies
+shotEnemyCollision world =
+  let enemyRects = L.map enemyrect world.enemies
+      playerShotsRects = L.map shotrect world.shotsP
       hitByShot e = L.any (\sr -> Coll.axisAlignedBoundingBox (enemyrect e) sr) playerShotsRects
       hitAnEnemy s = L.any (\er -> Coll.axisAlignedBoundingBox (shotrect s) er) enemyRects
-  in {state | enemies = unfilter hitByShot state.enemies
-            , shotsP = unfilter hitAnEnemy state.shotsP }
+  in {world | enemies = unfilter hitByShot world.enemies
+            , shotsP = unfilter hitAnEnemy world.shotsP }
 
-shotPlayerCollision : State -> State -- collide enemy shots with the player
-shotPlayerCollision state =
-  let enemyShotsRects = L.map shotrect state.shotsE
-      playerHit = L.any (\sr -> Coll.axisAlignedBoundingBox (playerrect state) sr) enemyShotsRects
-      hitThePlayer s = Coll.axisAlignedBoundingBox (playerrect state) (shotrect s)
-  in {state | lives = if playerHit then state.lives - 1 else state.lives
-            , shotsE = unfilter hitThePlayer state.shotsE}
+shotPlayerCollision : World -> World -- collide enemy shots with the player
+shotPlayerCollision world =
+  let enemyShotsRects = L.map shotrect world.shotsE
+      playerHit = L.any (\sr -> Coll.axisAlignedBoundingBox (playerrect world) sr) enemyShotsRects
+      hitThePlayer s = Coll.axisAlignedBoundingBox (playerrect world) (shotrect s)
+  in {world | lives = if playerHit then world.lives - 1 else world.lives
+            , shotsE = unfilter hitThePlayer world.shotsE}
 
 
 {-
  - VIEW
  -}
 
-view : State -> E.Element
-view state = C.collage resX resY ( [ C.filled Color.black (C.rect resX resY)
-                                 , player state.playerX
-                                 , C.toForm << E.color Color.blue <| E.show state
+view : World -> E.Element
+view world = C.collage resX resY ( [ C.filled Color.black (C.rect resX resY)
+                                 , player world.playerX
+                                 , C.toForm << E.color Color.blue <| E.show world
                                  ]
-                                 ++ (List.map enemy state.enemies)
-                                 ++ (List.map shotP state.shotsP)
-                                 ++ (List.map shotE state.shotsE)
+                                 ++ (List.map enemy world.enemies)
+                                 ++ (List.map shotP world.shotsP)
+                                 ++ (List.map shotE world.shotsE)
                                )
 
 -- Sprites
