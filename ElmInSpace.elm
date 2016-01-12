@@ -88,10 +88,10 @@ update act state = processInput act state
 processInput : Action -> State -> State
 processInput act state = if act == Left
                           then
-                           { state | playerX = state.playerX-1 }
+                           { state | playerX = max 0 (state.playerX-1) }
                          else if act == Right
                           then
-                           { state | playerX = state.playerX+1 }
+                           { state | playerX = min 105 (state.playerX+1) }
                          else if act == Shoot
                           then
                            { state | shotsP = (newplayershot state :: state.shotsP) }
@@ -111,7 +111,7 @@ filterDeadShots state = {state | shotsP = unfilter (\s -> s.y <  -50) state.shot
                                , shotsE = unfilter (\s -> s.y > resY) state.shotsE }
 
 moveEnemies : State -> State
-moveEnemies s = s
+moveEnemies state = {state | enemies = state.enemies}
 
 letEnemiesShoot : State -> State
 letEnemiesShoot s = s
@@ -161,7 +161,7 @@ view state = C.collage resX resY ( [ C.filled Color.black (C.rect resX resY)
 player : Int -> C.Form
 player pX = zero (playerpos pX) (C.toForm (E.image 52 32 "img/player.png"))
 playerpos : Int -> (Float, Float)
-playerpos pX = (56+toFloat pX*8, 460)
+playerpos pX = (32+toFloat pX*8, 460)
 -- http://www.wolframalpha.com/input/?i=InterpolatingPolynomial%5B%7B%7B1%2C+24%7D%2C+%7B2%2C+32%7D%2C+%7B3%2C+36%7D%7D%2C+x%5D
 enemywidth x = 24 + (8 - 2 * (x-2)) * (x-1) -- enemy_kind -> int
 enemy : Enemy -> C.Form
