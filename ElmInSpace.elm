@@ -6,6 +6,8 @@ import Time
 import Color
 import List as L
 import Random as R
+import Text
+
 import List.Extra as LE
 import Collision2D as Coll
 
@@ -246,12 +248,20 @@ grantCharge world =
 view : World -> E.Element
 view world = C.collage resX resY <| [ C.filled Color.black (C.rect resX resY)
                                 --    , starsky... ;)
-                                    , C.toForm << E.size (resX-50) (resY-100) << E.color Color.blue <| E.show world
+                                --    , C.toForm << E.size (resX-50) (resY-100) << E.color Color.blue <| E.show world
                                     , player world.playerX
                                     ]
                                     ++ (List.map (enemy world) world.enemies)
                                     ++ (List.map shotP world.shotsP)
                                     ++ (List.map shotE world.shotsE)
+                                    ++ header world
+
+header : World -> List C.Form
+header w = [ zero (900, 10) <| C.toForm <| E.image 32 32 "img/heart.png"
+           , zero (875, 10) <| C.toForm <| E.centered <| Text.color Color.red <| Text.fromString <| toString w.lives
+           , zero (800, 10) <| C.toForm <| E.image 32 32 "img/lightning.png"
+           , zero (775, 10) <| C.toForm <| E.centered <| Text.color Color.blue <| Text.fromString <| toString w.charge
+           ]
 
 -- Sprites
 -- TODO: clean this up a bit
