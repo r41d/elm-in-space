@@ -7,8 +7,10 @@ import Color
 import List as L
 import Random as R
 import Text
+import Maybe as M
 
 import List.Extra as LE
+import Maybe.Extra as ME
 import Collision2D as Coll
 
 
@@ -45,10 +47,14 @@ type alias World = -- game world
   , seed    : R.Seed -- meh
   }
 
+isAlive : Enemy -> Bool
+isAlive e = not <| isDead e
+isDead : Enemy -> Bool
+isDead e = ME.isJust e.dead
 aliveEnemies : World -> List Enemy
-aliveEnemies w = L.filter (\e -> e.live < 0) w.enemies
+aliveEnemies w = L.filter isAlive w.enemies
 deadEnemies : World -> List Enemy
-deadEnemies w = L.filter (\e -> e.live >= 0) w.enemies
+deadEnemies w = L.filter isDead w.enemies
 animcnt : World -> Int
 animcnt w = w.counter % 40
 
@@ -59,7 +65,7 @@ type alias Enemy = -- x y cooridinates spcify the center of the sprite
   { x     : Float
   , y     : Float
   , kind  : Int -- 1,2,3 -- specifies sprite image
-  , live : Int -- (<0)=alive, (>0)=remaing corpse time, 0=gargabe collect
+  , dead  : Maybe Int -- Nothing -> alive, (>0) -> remaing corpse time, (<=0) -> gargabe collect
   }
 
 type alias Shot = -- x y cooridinates spcify the center of the sprite
@@ -81,7 +87,7 @@ initEnemies =
       ppx x = roundF <| 40+5 * toFloat x -- position formulas
       ppy y = roundF <| 40+2.5 * toFloat y
       kk y = y // 30 + 1 -- kind formula
-  in LE.lift2 (\x' y' -> {x = ppx x', y = ppy y', kind = kk y', live = -1}) xlist ylist
+  in LE.lift2 (\x' y' -> {x = ppx x', y = ppy y', kind = kk y', dead = Nothing}) xlist ylist
 
 initial : World
 initial = { playerX = 0
@@ -212,7 +218,7 @@ shotEnemyCollision world =
       hitEnemies = L.filter hitByShot (aliveEnemies world)
   in {world | charge = min maxShots (world.charge + L.length hitEnemies)
             , enemies = unfilter hitByShot world.enemies
-                        ++ L.map (\e -> {e | live = corpseTime}) hitEnemies
+                        ++ L.map (\e -> {e | dead = Just corpseTime}) hitEnemies
             , shotsP = unfilter hitAnEnemy world.shotsP }
 
 shotPlayerCollision : World -> World -- collide enemy shots with the player
@@ -230,10 +236,10 @@ shotPlayerCollision world =
 
 handleCorpses : World -> World
 handleCorpses world =
-  let (dead, alive) = L.partition (\e -> e.live >= 0) world.enemies -- split corpses and alive enemies
-      deader = L.map (\e -> {e | live = e.live - 1}) dead -- decrement .live for corpses
-      deadest = L.filter (\e -> e.live > 0) deader
-  in {world | enemies = deadest ++ alive }
+  let decremented = L.map (\e -> {e | dead = M.map (\x->x-1) e.dead}) world.enemies -- decrement .dead for corpses
+      --stillThere = L.filter (\e -> maybeCondition e.dead (\x -> x <= 0) (\_ -> False) True) decremented
+      stillThere = L.filter (\e -> maybeCondition' e.dead (\x -> x > 0) True) decremented
+  in {world | enemies = stillThere}
 
 grantCharge : World -> World
 grantCharge world =
@@ -275,7 +281,7 @@ ab w = if animcnt w <= 20 then "a" else "b"
 deadenemy = E.image 36 24 "img/dead3.png"
 livingenemy w e = E.image (enemywidth e.kind) 24 ("img/enemy"++toString e.kind++ab w++"3.png")
 enemy : World -> Enemy -> C.Form
-enemy w e = zero (e.x,e.y) (C.toForm <| if e.live<0 then livingenemy w e else deadenemy)
+enemy w e = zero (e.x,e.y) (C.toForm <| if isAlive e then livingenemy w e else deadenemy)
 shotP : Shot -> C.Form
 shotP s = zero (s.x,s.y) (C.toForm (E.image 6 12 "img/playershot.png"))
 shotE : Shot -> C.Form
@@ -333,6 +339,10 @@ maybeCondition m f b1 b2 =
   case m of
     Just a  -> if f a then b1 a else b2
     Nothing -> b2
+
+maybeCondition' : Maybe a -> (a -> b) -> b -> b
+maybeCondition' m f b2 =
+  Maybe.withDefault b2 (Maybe.map f m)
 
 -- Sent a pull request to circuithub/elm-list-extra
 {-| Returns Just the element at the given index in the list,
