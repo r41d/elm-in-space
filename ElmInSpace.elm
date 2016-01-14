@@ -29,13 +29,15 @@ shotCoefficient = 5 --  0-100, 0 = no shots, 100 = hellfire
 maxShots = 5
 chargeGrantCoefficient = 60 -- 1-1000, 1=always full shots, 30=every second, 60=every two seconds, ...
 bitchMode = True -- missed shots come back at you
+worldBackground = False -- display the world in the background
 
 {-
 - DATA
 -}
 
 type alias World = -- game world
-    { playerX : Int
+    { mode : GameMode
+    , playerX : Int
     , lives : Int
     , charge : Int -- number of shots available
     , enemies : List Enemy
@@ -60,6 +62,13 @@ deadEnemies w = L.filter isDead w.enemies
 
 animcnt : World -> Int
 animcnt w = w.counter % 40
+
+
+type GameMode
+    = PreIngame
+    | Ingame
+    | Victory
+    | Defeat
 
 
 type Direction
@@ -106,15 +115,16 @@ initEnemies =
         LE.lift2 (\x' y' -> { x = ppx x', y = ppy y', kind = kk y', dead = Nothing }) xlist ylist
 
 initial : World
-initial = { playerX = 0
+initial = { mode = PreIngame
+          , playerX = 50
           , lives   = 3
           , charge  = maxShots
           , enemies = initEnemies
           , foeDir = DirR
           , counter = 0
           , shotsP = []
-          , shotsE = [ { x = 50, y = 0 } ]
-          , seed = R.initialSeed 5014
+          , shotsE = []
+          , seed = R.initialSeed 5014718317
           }
 
 
@@ -123,20 +133,63 @@ initial = { playerX = 0
 -}
 
 update : Action -> World -> World
-update act world = processInput act world
-                   |> moveShots
-                   >> filterDeadShots
-                   >> moveEnemies
-                   >> letEnemiesShoot
-                   >> shotEnemyCollision
-                   >> shotPlayerCollision
-                   >> handleCorpses
-                   >> grantCharge
-                   >> \world -> { world | counter = (world.counter + 1) % 1200 }
+update act world =
+    case world.mode of
+        PreIngame ->
+            processInputPreIngame act world
+            |> moveShots
+            >> filterDeadShots
+            >> incrementCounter
+        Ingame ->
+            processInputIngame act world
+            |> moveShots
+            >> filterDeadShots
+            >> moveEnemies
+            >> letEnemiesShoot
+            >> shotEnemyCollision
+            >> shotPlayerCollision
+            >> handleCorpses
+            >> grantCharge
+            >> incrementCounter
+            >> changeMode
+        Victory ->
+            world
+        Defeat ->
+            world
 
 
-processInput : Action -> World -> World
-processInput act ({ playerX, charge, shotsP } as world) =
+updateGameMode : World -> World
+updateGameMode world =
+    case world.mode of
+        PreIngame ->
+            { world | mode = world.mode }
+        Ingame ->
+            { world | mode = world.mode }
+        Victory ->
+            { world | mode = world.mode }
+        Defeat ->
+            { world | mode = world.mode }
+
+
+{-
+- PRE INGAME
+-}
+
+processInputPreIngame : Action -> World -> World
+processInputPreIngame act world =
+    case act of
+        ShootAction ->
+            { world | mode = Ingame }
+        _ ->
+            world
+
+
+{-
+- INGAME
+-}
+
+processInputIngame : Action -> World -> World
+processInputIngame act ({ playerX, charge, shotsP } as world) =
     case act of
         LeftAction ->
             { world | playerX = max 0 (playerX - 1) }
@@ -287,20 +340,51 @@ grantCharge ({ charge } as world) =
   then {world | charge = min maxShots (charge+1)}
   else world
 
+incrementCounter : World -> World
+incrementCounter world = { world | counter = (world.counter + 1) % 1200 }
+
+changeMode : World -> World
+changeMode world =
+    if L.isEmpty world.enemies
+    then
+        { world | mode = Victory }
+    else
+        if world.lives <= 0
+        then
+            { world | mode = Defeat }
+        else
+            world
+
+
 {-
 - VIEW
 -}
 
 view : World -> E.Element
-view world = C.collage resX resY <| [ C.filled Color.black (C.rect resX resY)
+view world =
+    let
+        redCenterString pos str = zero pos << C.toForm << E.centered << Text.height 40 << Text.color Color.red << Text.fromString <| str
+    in
+        C.collage resX resY <| [ C.filled Color.black (C.rect resX resY)
                                 --    , starsky... ;)
-                                --    , C.toForm << E.size (resX-50) (resY-100) << E.color Color.blue <| E.show world
-                                    , player world.playerX
-                                    ]
-                                    ++ (List.map (enemy world) world.enemies)
-                                    ++ (List.map shotP world.shotsP)
-                                    ++ (List.map shotE world.shotsE)
-                                    ++ header world
+                               ]
+                               -- this kille the whole application if worldBackground==True, WTF
+                               --   ++ if worldBackground then [C.toForm << E.size (resX-50) (resY-100) << E.color (Color.greyscale 0.8) <| E.show world] else []
+                               ++ [player world.playerX]
+                               ++ (List.map (enemy world) world.enemies)
+                               ++ (List.map shotP world.shotsP)
+                               ++ (List.map shotE world.shotsE)
+                               ++ header world
+                               ++ case world.mode of
+                                      PreIngame ->
+                                           [redCenterString (450, 300) "Press SPACE to start!"]
+                                      Ingame ->
+                                           []
+                                      Victory ->
+                                           [redCenterString (450, 300) "You did it! Press F5 for another round."]
+                                      Defeat ->
+                                           [redCenterString (450, 100) "Try harder next time!"]
+
 
 header : World -> List C.Form
 header w = [ zero (900, 10) <| C.toForm <| E.image 32 32 "img/heart.png"

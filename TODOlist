@@ -3,7 +3,7 @@
 - OK Gegner Todes-Sprite
 - OK Schüsse Throttling
 - OK Anzeige Leben & Restschüsse
-- -- GameOver/Victory Screen
+- OK GameOver/Victory Screen
 - -- elm-format - Ongoing
 - OK "live : Int" -> "dead : Maybe Int"
 - -- Randomness aus JavaScript
