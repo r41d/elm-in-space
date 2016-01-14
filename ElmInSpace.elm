@@ -1,3 +1,5 @@
+module Main (..) where
+
 import Graphics.Collage as C
 import Graphics.Element as E
 import Signal
@@ -15,8 +17,8 @@ import Collision2D as Coll
 
 
 {-
- - CONFIG
- -}
+- CONFIG
+-}
 
 -- Resolution: Quarter of Full HD
 resX = 960
@@ -29,65 +31,79 @@ chargeGrantCoefficient = 60 -- 1-1000, 1=always full shots, 30=every second, 60=
 bitchMode = True -- missed shots come back at you
 
 {-
- - DATA
- -}
+- DATA
+-}
 
 type alias World = -- game world
-  { playerX : Int
-  , lives   : Int
-  , charge  : Int -- number of shots available
-
-  , enemies : List Enemy
-  , foeDir  : Direction
-  , counter : Int
-
-  , shotsP  : List Shot
-  , shotsE  : List Shot
-
-  , seed    : R.Seed -- meh
-  }
+    { playerX : Int
+    , lives : Int
+    , charge : Int -- number of shots available
+    , enemies : List Enemy
+    , foeDir : Direction -- direction the enemies are headed
+    , counter : Int -- auxiliary counter for charge granting and enemy animation
+    , shotsP : List Shot
+    , shotsE : List Shot
+    , seed : R.Seed -- meh
+    }
 
 isAlive : Enemy -> Bool
 isAlive e = not <| isDead e
+
 isDead : Enemy -> Bool
 isDead e = ME.isJust e.dead
+
 aliveEnemies : World -> List Enemy
 aliveEnemies w = L.filter isAlive w.enemies
+
 deadEnemies : World -> List Enemy
 deadEnemies w = L.filter isDead w.enemies
+
 animcnt : World -> Int
 animcnt w = w.counter % 40
 
---               left | rght | down remaining nextDirection
-type Direction = DirL | DirR | DirD Int Direction
 
-type alias Enemy = -- x y cooridinates spcify the center of the sprite
-  { x     : Float
-  , y     : Float
-  , kind  : Int -- 1,2,3 -- specifies sprite image
-  , dead  : Maybe Int -- Nothing -> alive, (>0) -> remaing corpse time, (<=0) -> gargabe collect
-  }
+type Direction
+    = DirL
+    | DirR
+    | DirD Int Direction -- heading down for Int steps and then turning to Direction
+
+
+
+type alias Enemy =
+    { x : Float -- x y cooridinates spcify the center of the sprite
+    , y : Float
+    , kind : Int -- 1,2,3 -- specifies sprite image
+    , dead : Maybe Int -- Nothing -> alive, (>0) -> remaing corpse time, (<=0) -> gargabe collect
+    }
+
 
 type alias Shot = -- x y cooridinates spcify the center of the sprite
-  { x : Float
-  , y : Float
-  }
+    { x : Float
+    , y : Float
+    }
 
-type Action = LeftAction | RightAction | ShootAction | NothingAction
+
+type Action
+    = LeftAction
+    | RightAction
+    | ShootAction
+    | NothingAction
 
 
 {-
- - INIT
- -}
+- INIT
+-}
 
 initEnemies : List Enemy
 initEnemies =
-  let xlist = L.map ((*) 15) [0..9]
-      ylist = L.map ((*) 15) [0..5]
-      ppx x = roundF <| 40+5 * toFloat x -- position formulas
-      ppy y = roundF <| 40+2.5 * toFloat y
-      kk y = y // 30 + 1 -- kind formula
-  in LE.lift2 (\x' y' -> {x = ppx x', y = ppy y', kind = kk y', dead = Nothing}) xlist ylist
+    let
+        xlist = L.map ((*) 15) [0..9]
+        ylist = L.map ((*) 15) [0..5]
+        ppx x = roundF <| 40 + 5 * toFloat x -- position formulas
+        ppy y = roundF <| 40 + 2.5 * toFloat y
+        kk y = y // 30 + 1 -- kind formula
+    in
+        LE.lift2 (\x' y' -> { x = ppx x', y = ppy y', kind = kk y', dead = Nothing }) xlist ylist
 
 initial : World
 initial = { playerX = 0
@@ -97,14 +113,14 @@ initial = { playerX = 0
           , foeDir = DirR
           , counter = 0
           , shotsP = []
-          , shotsE = [{x=50,y=0}]
+          , shotsE = [ { x = 50, y = 0 } ]
           , seed = R.initialSeed 5014
           }
 
 
 {-
- - UPDATE
- -}
+- UPDATE
+-}
 
 update : Action -> World -> World
 update act world = processInput act world
@@ -116,94 +132,111 @@ update act world = processInput act world
                    >> shotPlayerCollision
                    >> handleCorpses
                    >> grantCharge
-                   >> \world -> {world | counter = (world.counter + 1) % 1200}
+                   >> \world -> { world | counter = (world.counter + 1) % 1200 }
+
 
 processInput : Action -> World -> World
 processInput act ({ playerX, charge, shotsP } as world) =
-  case act of
-    LeftAction ->
-      { world | playerX = max 0 (playerX - 1) }
-    RightAction ->
-      { world | playerX = min 105 (playerX + 1) }
-    ShootAction ->
-       if world.charge > 0
-         then { world | charge = charge - 1
-                      , shotsP = (newplayershot world :: shotsP) }
-         else world
-    NothingAction ->
-      world
+    case act of
+        LeftAction ->
+            { world | playerX = max 0 (playerX - 1) }
+        RightAction ->
+            { world | playerX = min 105 (playerX + 1) }
+        ShootAction ->
+            if world.charge > 0 then
+                { world
+                    | charge = charge - 1
+                    , shotsP = (newplayershot world :: shotsP)
+                }
+            else
+                world
+        NothingAction ->
+            world
+
 
 newplayershot : World -> Shot
 newplayershot { playerX } =
-  let ppos = playerpos playerX
-  in {x = fst ppos, y = snd ppos - 15}
+    let
+        ppos = playerpos playerX
+    in
+        { x = fst ppos, y = snd ppos - 15 }
+
 
 moveShots : World -> World
 moveShots ({ shotsP, shotsE } as world) =
-  {world | shotsP = L.map (\s -> {s | y=s.y-5}) shotsP
-         , shotsE = L.map (\s -> {s | y=s.y+5}) shotsE }
+    {world | shotsP = L.map (\s -> {s | y=s.y-5}) shotsP
+           , shotsE = L.map (\s -> {s | y=s.y+5}) shotsE }
+
 
 filterDeadShots : World -> World
 filterDeadShots ({ shotsP, shotsE } as world) =
-  {world | shotsP = unfilter (\s -> s.y < -20) shotsP
-         , shotsE = (unfilter (\s -> s.y > resY) shotsE)
-                    ++ if bitchMode then L.filter (\s -> s.y < -20) shotsP else []}
+    {world | shotsP = unfilter (\s -> s.y < -20) shotsP
+           , shotsE = (unfilter (\s -> s.y > resY) shotsE)
+                      ++ if bitchMode then L.filter (\s -> s.y < -20) shotsP else []}
+
 
 moveEnemies : World -> World
 moveEnemies ({ enemies, foeDir } as world) =
-  let xmin = L.minimum (L.map .x enemies)
-      xmax = L.maximum (L.map .x enemies)
-      ymax = L.maximum (L.map .y enemies)
-      moveSingleEnemy e x' y' = {e | x=e.x+x',  y=e.y+y'}
-      moveAllLeft = L.map (\e -> moveSingleEnemy e -2 0) enemies
-      moveAllRight = L.map (\e -> moveSingleEnemy e 2 0) enemies
-      moveAllDown = L.map (\e -> moveSingleEnemy e 0 1) enemies
-      invAtBottom y = y >= 380
-      invAtLeftEdge x = x <= 30
-      invAtRightEdge x = x >= resX-100
-      -- somewhat of code duplication, TODO: figure out a readable(!) shorter alternative
-      onlyLR = -- only move left to right
-        case world.foeDir of
-          DirL     -> {world | enemies = moveAllLeft
-                             , foeDir = maybeCondition xmin invAtLeftEdge (\_->DirR) foeDir}
-          DirR     -> {world | enemies = moveAllRight
-                             , foeDir = maybeCondition xmax invAtRightEdge (\_->DirL) foeDir}
-          DirD _ d -> {world | foeDir = d} -- stop moving down and just turn to the next direction
-      nextdir = -- also move down when reaching the left/right border
-        case foeDir of
-          DirL     -> {world | enemies = moveAllLeft
-                             , foeDir = maybeCondition xmin invAtLeftEdge (\_->DirD 10 DirR) foeDir}
-          DirR     -> {world | enemies = moveAllRight
-                             , foeDir = maybeCondition xmax invAtRightEdge (\_->DirD 12 DirL) foeDir}
-          DirD 0 d -> {world | foeDir = d}
-          DirD i d -> {world | enemies = moveAllDown
-                             , foeDir = DirD (i-1) d}
-  in
-    if maybeCondition' ymax invAtBottom False then onlyLR else nextdir
+    let
+        xmin = L.minimum (L.map .x enemies)
+        xmax = L.maximum (L.map .x enemies)
+        ymax = L.maximum (L.map .y enemies)
+        moveSingleEnemy e x' y' = {e | x=e.x+x',  y=e.y+y'}
+        moveAllLeft = L.map (\e -> moveSingleEnemy e -2 0) enemies
+        moveAllRight = L.map (\e -> moveSingleEnemy e 2 0) enemies
+        moveAllDown = L.map (\e -> moveSingleEnemy e 0 1) enemies
+        invAtBottom y = y >= 380
+        invAtLeftEdge x = x <= 30
+        invAtRightEdge x = x >= resX-100
+        -- somewhat of code duplication, TODO: figure out a readable(!) shorter alternative
+        onlyLR = -- only move left to right
+          case world.foeDir of
+            DirL     -> {world | enemies = moveAllLeft
+                               , foeDir = maybeCondition xmin invAtLeftEdge (\_->DirR) foeDir}
+            DirR     -> {world | enemies = moveAllRight
+                               , foeDir = maybeCondition xmax invAtRightEdge (\_->DirL) foeDir}
+            DirD _ d -> {world | foeDir = d} -- stop moving down and just turn to the next direction
+        nextdir = -- also move down when reaching the left/right border
+          case foeDir of
+            DirL     -> {world | enemies = moveAllLeft
+                               , foeDir = maybeCondition xmin invAtLeftEdge (\_->DirD 10 DirR) foeDir}
+            DirR     -> {world | enemies = moveAllRight
+                               , foeDir = maybeCondition xmax invAtRightEdge (\_->DirD 12 DirL) foeDir}
+            DirD 0 d -> {world | foeDir = d}
+            DirD i d -> {world | enemies = moveAllDown
+                               , foeDir = DirD (i-1) d}
+    in
+        if maybeCondition' ymax invAtBottom False
+        then onlyLR
+        else nextdir
 
 
 letEnemiesShoot : World -> World
 letEnemiesShoot world =
-  let (shootNow, s') = R.generate have2shoot world.seed
-      (maybeRandFoe, s'') = R.generate (randomEnemy world) s'
-      seedWorld = {world | seed = s''}
-  in
-    maybeCondition maybeRandFoe (\_->shootNow) (\randFoe -> spawnShot seedWorld randFoe) seedWorld
+    let
+        (shootNow, s') = R.generate have2shoot world.seed
+        (maybeRandFoe, s'') = R.generate (randomEnemy world) s'
+        seedWorld = {world | seed = s''}
+    in
+        maybeCondition maybeRandFoe (\_->shootNow) (\randFoe -> spawnShot seedWorld randFoe) seedWorld
 
 have2shoot : R.Generator Bool
 have2shoot = R.map (\i -> i <= shotCoefficient) (R.int 1 100)
 
 randomEnemy : World -> R.Generator (Maybe Enemy)
 randomEnemy { enemies } =
-  let idx = R.int 0 (L.length enemies - 1)
-  in R.map (\i -> (enemies `getAt` i)) idx
+    let
+        idx = R.int 0 (L.length enemies - 1)
+    in
+        R.map (\i -> (enemies `getAt` i)) idx
 
 spawnShot : World -> Enemy -> World
 spawnShot world { x, y } = {world | shotsE = {x=x, y=y} :: world.shotsE}
 
+
 {-
- - COLLISION
- -}
+- COLLISION
+-}
 
 playerrect world = Coll.rectangle (fst (playerpos world.playerX)) (snd (playerpos world.playerX)) 52 32
 enemyrect e = Coll.rectangle e.x e.y (toFloat (enemywidth e.kind)) 24
@@ -212,35 +245,40 @@ shotrect s = Coll.rectangle s.x s.y 6 12
 
 shotEnemyCollision : World -> World -- collide player shots with enemies
 shotEnemyCollision ({charge, enemies, shotsP} as world) =
-  let enemyRects = L.map enemyrect (aliveEnemies world)
-      playerShotsRects = L.map shotrect shotsP
-      hitByShot e = L.any (\sr -> Coll.axisAlignedBoundingBox (enemyrect e) sr) playerShotsRects
-      hitAnEnemy s = L.any (\er -> Coll.axisAlignedBoundingBox (shotrect s) er) enemyRects
-      hitEnemies = L.filter hitByShot (aliveEnemies world)
-  in {world | charge = min maxShots (charge + L.length hitEnemies)
-            , enemies = unfilter hitByShot enemies
-                        ++ L.map (\e -> {e | dead = Just corpseTime}) hitEnemies
-            , shotsP = unfilter hitAnEnemy shotsP }
+    let
+        enemyRects = L.map enemyrect (aliveEnemies world)
+        playerShotsRects = L.map shotrect shotsP
+        hitByShot e = L.any (\sr -> Coll.axisAlignedBoundingBox (enemyrect e) sr) playerShotsRects
+        hitAnEnemy s = L.any (\er -> Coll.axisAlignedBoundingBox (shotrect s) er) enemyRects
+        hitEnemies = L.filter hitByShot (aliveEnemies world)
+    in
+        {world | charge = min maxShots (charge + L.length hitEnemies)
+               , enemies = unfilter hitByShot enemies
+                           ++ L.map (\e -> {e | dead = Just corpseTime}) hitEnemies
+               , shotsP = unfilter hitAnEnemy shotsP }
 
 shotPlayerCollision : World -> World -- collide enemy shots with the player
 shotPlayerCollision ({lives, enemies, shotsE} as world) =
-  let enemyShotsRects = L.map shotrect shotsE
-      playerHit = L.any (\sr -> Coll.axisAlignedBoundingBox (playerrect world) sr) enemyShotsRects
-      hitThePlayer s = Coll.axisAlignedBoundingBox (playerrect world) (shotrect s)
-  in {world | lives = if playerHit then lives - 1 else lives
-            , shotsE = unfilter hitThePlayer shotsE}
+    let
+        enemyShotsRects = L.map shotrect shotsE
+        playerHit = L.any (\sr -> Coll.axisAlignedBoundingBox (playerrect world) sr) enemyShotsRects
+        hitThePlayer s = Coll.axisAlignedBoundingBox (playerrect world) (shotrect s)
+    in
+        {world | lives = if playerHit then lives - 1 else lives
+               , shotsE = unfilter hitThePlayer shotsE}
 
 
 {-
- - ORGANIZATION
- -}
+- ORGANIZATION
+-}
 
 handleCorpses : World -> World
 handleCorpses ({ enemies } as world) =
-  let decremented = L.map (\e -> {e | dead = M.map (\x->x-1) e.dead}) enemies -- decrement .dead for corpses
-      --stillThere = L.filter (\e -> maybeCondition e.dead (\x -> x <= 0) (\_ -> False) True) decremented
-      stillThere = L.filter (\e -> maybeCondition' e.dead (\x -> x > 0) True) decremented
-  in {world | enemies = stillThere}
+    let
+        decremented = L.map (\e -> {e | dead = M.map (\x->x-1) e.dead}) enemies -- decrement .dead for corpses
+        stillThere = L.filter (\e -> maybeCondition' e.dead (\x -> x > 0) True) decremented
+    in
+        {world | enemies = stillThere}
 
 grantCharge : World -> World
 grantCharge ({ charge } as world) =
@@ -249,8 +287,8 @@ grantCharge ({ charge } as world) =
   else world
 
 {-
- - VIEW
- -}
+- VIEW
+-}
 
 view : World -> E.Element
 view world = C.collage resX resY <| [ C.filled Color.black (C.rect resX resY)
@@ -272,57 +310,68 @@ header w = [ zero (900, 10) <| C.toForm <| E.image 32 32 "img/heart.png"
 
 -- Sprites
 -- TODO: clean this up a bit
+
 player : Int -> C.Form
 player pX = zero (playerpos pX) (C.toForm (E.image 52 32 "img/player.png"))
+
 playerpos : Int -> (Float, Float)
 playerpos pX = (32+toFloat pX*8, 460)
+
 -- http://www.wolframalpha.com/input/?i=InterpolatingPolynomial%5B%7B%7B1%2C+24%7D%2C+%7B2%2C+32%7D%2C+%7B3%2C+36%7D%7D%2C+x%5D
 enemywidth x = 24 + (8 - 2 * (x-2)) * (x-1) -- enemy_kind -> int
-ab w = if animcnt w <= 20 then "a" else "b"
-deadenemy = E.image 36 24 "img/dead3.png"
-livingenemy w e = E.image (enemywidth e.kind) 24 ("img/enemy"++toString e.kind++ab w++"3.png")
+
 enemy : World -> Enemy -> C.Form
-enemy w e = zero (e.x,e.y) (C.toForm <| if isAlive e then livingenemy w e else deadenemy)
+enemy w e =
+    let
+        ab w = if animcnt w <= 20 then "a" else "b"
+        livingenemy w e = E.image (enemywidth e.kind) 24 ("img/enemy"++toString e.kind++ab w++"3.png")
+        deadenemy = E.image 36 24 "img/dead3.png"
+    in
+        zero (e.x,e.y) (C.toForm <| if isAlive e then livingenemy w e else deadenemy)
+
 shotP : Shot -> C.Form
 shotP s = zero (s.x,s.y) (C.toForm (E.image 6 12 "img/playershot.png"))
+
 shotE : Shot -> C.Form
 shotE s = zero (s.x,s.y) (C.toForm (E.image 6 12 "img/enemyshot.png"))
+
 -- makes top left corner the (0,0) origin
 zero : (Float, Float) -> C.Form -> C.Form
 zero (x,y) f = C.move (x,-y) (C.move (-450,250) f)
 
 
 {-
- - INPUT
- -}
+- INPUT
+-}
 
 input : Signal Action
 input = Signal.merge leftNright space
 
 -- sampleOn : Signal a -> Signal b -> Signal b
 leftNright : Signal Action
-leftNright = Signal.sampleOn clock
-               (Signal.map
-                 (\ v -> if v == {x=-1, y=0} then LeftAction
-                         else if v == {x=1, y=0} then RightAction
-                         else NothingAction)
-                 Keyboard.arrows)
-               --(Signal.filter (\ v -> v.y == 0) {x=0, y=0} Keyboard.arrows)
+leftNright =
+    Signal.sampleOn clock
+        (Signal.map
+          (\ v -> if v == {x=-1, y=0} then LeftAction
+                  else if v == {x=1, y=0} then RightAction
+                  else NothingAction)
+          Keyboard.arrows)
+        --(Signal.filter (\ v -> v.y == 0) {x=0, y=0} Keyboard.arrows)
 space : Signal Action
 space = Signal.map (\v -> if v == True then ShootAction else NothingAction) Keyboard.space
 
 
 {-
- - MAIN
- -}
+- MAIN
+-}
 
 main : Signal E.Element
 main = Signal.map view (Signal.foldp update initial input)
 
 
 {-
- - UTIL - I hope i can get rid of these once they are added to the 3rd party Libraries
- -}
+- UTIL - I hope i can get rid of these once they are added to the 3rd party Libraries
+-}
 
 -- circuithub/elm-list-extra contains this on master (as `removeWhen`) but not in the latest release
 {-| Keep only elements that DON'T satisfy the predicate.
@@ -356,4 +405,3 @@ getAt xs idx = List.head <| List.drop idx xs
 {-| Round a float
 -}
 roundF = toFloat << round
-
