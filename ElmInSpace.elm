@@ -119,42 +119,45 @@ update act world = processInput act world
                    >> \world -> {world | counter = (world.counter + 1) % 1200}
 
 processInput : Action -> World -> World
-processInput act world =
+processInput act ({ playerX, charge, shotsP } as world) =
   case act of
     LeftAction ->
-      { world | playerX = max 0 (world.playerX - 1) }
+      { world | playerX = max 0 (playerX - 1) }
     RightAction ->
-      { world | playerX = min 105 (world.playerX + 1) }
+      { world | playerX = min 105 (playerX + 1) }
     ShootAction ->
        if world.charge > 0
-         then { world | charge = world.charge - 1
-                      , shotsP = (newplayershot world :: world.shotsP) }
+         then { world | charge = charge - 1
+                      , shotsP = (newplayershot world :: shotsP) }
          else world
     NothingAction ->
       world
 
 newplayershot : World -> Shot
-newplayershot s = let ppos = playerpos s.playerX
-                  in {x = fst ppos, y = snd ppos - 15}
+newplayershot { playerX } =
+  let ppos = playerpos playerX
+  in {x = fst ppos, y = snd ppos - 15}
 
 moveShots : World -> World
-moveShots world = {world | shotsP = L.map (\s -> {s | y=s.y-5}) world.shotsP
-                         , shotsE = L.map (\s -> {s | y=s.y+5}) world.shotsE }
+moveShots ({ shotsP, shotsE } as world) =
+  {world | shotsP = L.map (\s -> {s | y=s.y-5}) shotsP
+         , shotsE = L.map (\s -> {s | y=s.y+5}) shotsE }
 
 filterDeadShots : World -> World
-filterDeadShots world = {world | shotsP = unfilter (\s -> s.y < -20) world.shotsP
-                               , shotsE = (unfilter (\s -> s.y > resY) world.shotsE)
-                                          ++ if bitchMode then L.filter (\s -> s.y < -20) world.shotsP else []}
+filterDeadShots ({ shotsP, shotsE } as world) =
+  {world | shotsP = unfilter (\s -> s.y < -20) shotsP
+         , shotsE = (unfilter (\s -> s.y > resY) shotsE)
+                    ++ if bitchMode then L.filter (\s -> s.y < -20) shotsP else []}
 
 moveEnemies : World -> World
-moveEnemies world =
-  let xmin = L.minimum (L.map .x world.enemies)
-      xmax = L.maximum (L.map .x world.enemies)
-      ymax = L.maximum (L.map .y world.enemies)
+moveEnemies ({ enemies, foeDir } as world) =
+  let xmin = L.minimum (L.map .x enemies)
+      xmax = L.maximum (L.map .x enemies)
+      ymax = L.maximum (L.map .y enemies)
       moveSingleEnemy e x' y' = {e | x=e.x+x',  y=e.y+y'}
-      moveAllLeft = L.map (\e -> moveSingleEnemy e -2 0) world.enemies
-      moveAllRight = L.map (\e -> moveSingleEnemy e 2 0) world.enemies
-      moveAllDown = L.map (\e -> moveSingleEnemy e 0 1) world.enemies
+      moveAllLeft = L.map (\e -> moveSingleEnemy e -2 0) enemies
+      moveAllRight = L.map (\e -> moveSingleEnemy e 2 0) enemies
+      moveAllDown = L.map (\e -> moveSingleEnemy e 0 1) enemies
       invAtBottom y = y >= 380
       invAtLeftEdge x = x <= 30
       invAtRightEdge x = x >= resX-100
@@ -162,21 +165,21 @@ moveEnemies world =
       onlyLR = -- only move left to right
         case world.foeDir of
           DirL     -> {world | enemies = moveAllLeft
-                             , foeDir = maybeCondition xmin invAtLeftEdge (\_->DirR) world.foeDir}
+                             , foeDir = maybeCondition xmin invAtLeftEdge (\_->DirR) foeDir}
           DirR     -> {world | enemies = moveAllRight
-                             , foeDir = maybeCondition xmax invAtRightEdge (\_->DirL) world.foeDir}
+                             , foeDir = maybeCondition xmax invAtRightEdge (\_->DirL) foeDir}
           DirD _ d -> {world | foeDir = d} -- stop moving down and just turn to the next direction
       nextdir = -- also move down when reaching the left/right border
-        case world.foeDir of
+        case foeDir of
           DirL     -> {world | enemies = moveAllLeft
-                             , foeDir = maybeCondition xmin invAtLeftEdge (\_->DirD 10 DirR) world.foeDir}
+                             , foeDir = maybeCondition xmin invAtLeftEdge (\_->DirD 10 DirR) foeDir}
           DirR     -> {world | enemies = moveAllRight
-                             , foeDir = maybeCondition xmax invAtRightEdge (\_->DirD 12 DirL) world.foeDir}
+                             , foeDir = maybeCondition xmax invAtRightEdge (\_->DirD 12 DirL) foeDir}
           DirD 0 d -> {world | foeDir = d}
           DirD i d -> {world | enemies = moveAllDown
                              , foeDir = DirD (i-1) d}
   in
-    if maybeCondition ymax invAtBottom (\_->True) False then onlyLR else nextdir
+    if maybeCondition' ymax invAtBottom False then onlyLR else nextdir
 
 
 letEnemiesShoot : World -> World
@@ -191,13 +194,12 @@ have2shoot : R.Generator Bool
 have2shoot = R.map (\i -> i <= shotCoefficient) (R.int 1 100)
 
 randomEnemy : World -> R.Generator (Maybe Enemy)
-randomEnemy world =
-  let idx = R.int 0 (L.length world.enemies - 1)
-  in R.map (\i -> (world.enemies `getAt` i)) idx
+randomEnemy { enemies } =
+  let idx = R.int 0 (L.length enemies - 1)
+  in R.map (\i -> (enemies `getAt` i)) idx
 
 spawnShot : World -> Enemy -> World
-spawnShot world enemy = {world | shotsE = {x=enemy.x, y=enemy.y} :: world.shotsE}
-
+spawnShot world { x, y } = {world | shotsE = {x=x, y=y} :: world.shotsE}
 
 {-
  - COLLISION
@@ -209,24 +211,24 @@ shotrect s = Coll.rectangle s.x s.y 6 12
 
 
 shotEnemyCollision : World -> World -- collide player shots with enemies
-shotEnemyCollision world =
+shotEnemyCollision ({charge, enemies, shotsP} as world) =
   let enemyRects = L.map enemyrect (aliveEnemies world)
-      playerShotsRects = L.map shotrect world.shotsP
+      playerShotsRects = L.map shotrect shotsP
       hitByShot e = L.any (\sr -> Coll.axisAlignedBoundingBox (enemyrect e) sr) playerShotsRects
       hitAnEnemy s = L.any (\er -> Coll.axisAlignedBoundingBox (shotrect s) er) enemyRects
       hitEnemies = L.filter hitByShot (aliveEnemies world)
-  in {world | charge = min maxShots (world.charge + L.length hitEnemies)
-            , enemies = unfilter hitByShot world.enemies
+  in {world | charge = min maxShots (charge + L.length hitEnemies)
+            , enemies = unfilter hitByShot enemies
                         ++ L.map (\e -> {e | dead = Just corpseTime}) hitEnemies
-            , shotsP = unfilter hitAnEnemy world.shotsP }
+            , shotsP = unfilter hitAnEnemy shotsP }
 
 shotPlayerCollision : World -> World -- collide enemy shots with the player
-shotPlayerCollision world =
-  let enemyShotsRects = L.map shotrect world.shotsE
+shotPlayerCollision ({lives, enemies, shotsE} as world) =
+  let enemyShotsRects = L.map shotrect shotsE
       playerHit = L.any (\sr -> Coll.axisAlignedBoundingBox (playerrect world) sr) enemyShotsRects
       hitThePlayer s = Coll.axisAlignedBoundingBox (playerrect world) (shotrect s)
-  in {world | lives = if playerHit then world.lives - 1 else world.lives
-            , shotsE = unfilter hitThePlayer world.shotsE}
+  in {world | lives = if playerHit then lives - 1 else lives
+            , shotsE = unfilter hitThePlayer shotsE}
 
 
 {-
@@ -234,17 +236,17 @@ shotPlayerCollision world =
  -}
 
 handleCorpses : World -> World
-handleCorpses world =
-  let decremented = L.map (\e -> {e | dead = M.map (\x->x-1) e.dead}) world.enemies -- decrement .dead for corpses
+handleCorpses ({ enemies } as world) =
+  let decremented = L.map (\e -> {e | dead = M.map (\x->x-1) e.dead}) enemies -- decrement .dead for corpses
       --stillThere = L.filter (\e -> maybeCondition e.dead (\x -> x <= 0) (\_ -> False) True) decremented
       stillThere = L.filter (\e -> maybeCondition' e.dead (\x -> x > 0) True) decremented
   in {world | enemies = stillThere}
 
 grantCharge : World -> World
-grantCharge world =
+grantCharge ({ charge } as world) =
   if world.counter % chargeGrantCoefficient == 0
-    then {world | charge = min maxShots (world.charge+1)}
-    else world
+  then {world | charge = min maxShots (charge+1)}
+  else world
 
 {-
  - VIEW
