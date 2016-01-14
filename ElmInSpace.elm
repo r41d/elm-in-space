@@ -120,19 +120,18 @@ update act world = processInput act world
 
 processInput : Action -> World -> World
 processInput act world =
-  if act == LeftAction
-    then { world | playerX = max 0 (world.playerX - 1) }
-    else
-      if act == RightAction
-        then { world | playerX = min 105 (world.playerX + 1) }
-        else
-          if act == ShootAction
-            then
-              if world.charge > 0
-                then { world | charge = world.charge - 1
-                             , shotsP = (newplayershot world :: world.shotsP) }
-                else world
-          else world
+  case act of
+    LeftAction ->
+      { world | playerX = max 0 (world.playerX - 1) }
+    RightAction ->
+      { world | playerX = min 105 (world.playerX + 1) }
+    ShootAction ->
+       if world.charge > 0
+         then { world | charge = world.charge - 1
+                      , shotsP = (newplayershot world :: world.shotsP) }
+         else world
+    NothingAction ->
+      world
 
 newplayershot : World -> Shot
 newplayershot s = let ppos = playerpos s.playerX
