@@ -1,0 +1,18 @@
+<html>
+
+  <head>
+    <title>Elm In Space!</title>
+    <script type="text/javascript" src="ElmInSpace.js"></script>
+  </head>
+
+  <body>
+    <div id="elminspace" style="width:960px; height:540px;"></div>
+  </body>
+
+  <script type="text/javascript">
+    var elmDiv = document.getElementById('elminspace');
+    var elminspace = Elm.embed(Elm.ElmInSpace, elmDiv, {rng:[]});
+    elminspace.ports.rng.send([ (Math.random() * 1000000) | 0 ]);
+  </script>
+
+</html>

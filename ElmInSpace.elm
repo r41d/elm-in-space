@@ -31,6 +31,16 @@ chargeGrantCoefficient = 60 -- 1-1000, 1=always full shots, 30=every second, 60=
 bitchMode = True -- missed shots come back at you
 worldBackground = False -- display the world in the background
 
+
+{-
+- PORT
+-}
+
+--port rngJS : Signal Int
+
+--rngMailbox = Signal.mailbox Int
+
+
 {-
 - DATA
 -}
@@ -153,9 +163,11 @@ update act world =
             >> incrementCounter
             >> changeMode
         Victory ->
-            world
+            moveShots world
+            |> filterDeadShots
         Defeat ->
-            world
+            moveShots world
+            |> filterDeadShots
 
 
 updateGameMode : World -> World
@@ -252,9 +264,9 @@ moveEnemies ({ enemies, foeDir } as world) =
         nextdir = -- also move down when reaching the left/right border
           case foeDir of
             DirL     -> {world | enemies = moveAllLeft
-                               , foeDir = maybeCondition' xmin (\minX -> if invAtLeftEdge minX then DirD 18 DirR else foeDir) foeDir}
+                               , foeDir = maybeCondition' xmin (\minX -> if invAtLeftEdge minX then DirD 12 DirR else foeDir) foeDir}
             DirR     -> {world | enemies = moveAllRight
-                               , foeDir = maybeCondition' xmax (\maxX -> if invAtRightEdge maxX then DirD 18 DirL else foeDir) foeDir}
+                               , foeDir = maybeCondition' xmax (\maxX -> if invAtRightEdge maxX then DirD 12 DirL else foeDir) foeDir}
             DirD 0 d -> {world | foeDir = d}
             DirD i d -> {world | enemies = moveAllDown
                                , foeDir = DirD (i-1) d}
@@ -383,7 +395,7 @@ view world =
                                       Victory ->
                                            [redCenterString (450, 300) "You did it! Press F5 for another round."]
                                       Defeat ->
-                                           [redCenterString (450, 100) "Try harder next time!"]
+                                           [redCenterString (450, 80) "Try harder next time!"]
 
 
 header : World -> List C.Form
