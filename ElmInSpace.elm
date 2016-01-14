@@ -192,16 +192,16 @@ moveEnemies ({ enemies, foeDir } as world) =
         onlyLR = -- only move left to right
           case world.foeDir of
             DirL     -> {world | enemies = moveAllLeft
-                               , foeDir = maybeCondition xmin invAtLeftEdge (\_->DirR) foeDir}
+                               , foeDir = maybeCondition' xmin (\minX -> if invAtLeftEdge minX then DirR else foeDir) foeDir}
             DirR     -> {world | enemies = moveAllRight
-                               , foeDir = maybeCondition xmax invAtRightEdge (\_->DirL) foeDir}
+                               , foeDir = maybeCondition' xmax (\maxX -> if invAtRightEdge maxX then DirL else foeDir) foeDir}
             DirD _ d -> {world | foeDir = d} -- stop moving down and just turn to the next direction
         nextdir = -- also move down when reaching the left/right border
           case foeDir of
             DirL     -> {world | enemies = moveAllLeft
-                               , foeDir = maybeCondition xmin invAtLeftEdge (\_->DirD 10 DirR) foeDir}
+                               , foeDir = maybeCondition' xmin (\minX -> if invAtLeftEdge minX then DirD 18 DirR else foeDir) foeDir}
             DirR     -> {world | enemies = moveAllRight
-                               , foeDir = maybeCondition xmax invAtRightEdge (\_->DirD 12 DirL) foeDir}
+                               , foeDir = maybeCondition' xmax (\maxX -> if invAtRightEdge maxX then DirD 18 DirL else foeDir) foeDir}
             DirD 0 d -> {world | foeDir = d}
             DirD i d -> {world | enemies = moveAllDown
                                , foeDir = DirD (i-1) d}
@@ -212,23 +212,24 @@ moveEnemies ({ enemies, foeDir } as world) =
 
 
 letEnemiesShoot : World -> World
-letEnemiesShoot world =
+letEnemiesShoot ({ enemies, seed } as world) =
     let
-        (shootNow, s') = R.generate have2shoot world.seed
-        (maybeRandFoe, s'') = R.generate (randomEnemy world) s'
-        seedWorld = {world | seed = s''}
+        enemyGen = shootNow `R.andThen` (\sn -> if sn then randomEnemy enemies else randomEnemy [])
+        (maybeRandFoe, s) = R.generate enemyGen seed
+        seedWorld = {world | seed = s}
     in
-        maybeCondition maybeRandFoe (\_->shootNow) (\randFoe -> spawnShot seedWorld randFoe) seedWorld
+        maybeCondition' maybeRandFoe (\randFoe -> spawnShot seedWorld randFoe) seedWorld
 
-have2shoot : R.Generator Bool
-have2shoot = R.map (\i -> i <= shotCoefficient) (R.int 1 100)
+shootNow : R.Generator Bool
+shootNow = R.map (\i -> i <= shotCoefficient) (R.int 1 100)
 
-randomEnemy : World -> R.Generator (Maybe Enemy)
-randomEnemy { enemies } =
+randomEnemy : List Enemy -> R.Generator (Maybe Enemy)
+randomEnemy enemies =
     let
         idx = R.int 0 (L.length enemies - 1)
     in
         R.map (\i -> (enemies `getAt` i)) idx
+
 
 spawnShot : World -> Enemy -> World
 spawnShot world { x, y } = {world | shotsE = {x=x, y=y} :: world.shotsE}

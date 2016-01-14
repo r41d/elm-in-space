@@ -1,6 +1,14 @@
-- Gegner schießen OK
-- Gegner Animation OK
-- Gegner Todes-Sprite OK
-- Schüsse Throttling OK
-- Anzeige Leben & Restschüsse OK
-- GameOver/Victory Screen
+- OK Gegner schießen
+- OK Gegner Animation
+- OK Gegner Todes-Sprite
+- OK Schüsse Throttling
+- OK Anzeige Leben & Restschüsse
+- -- GameOver/Victory Screen
+- -- elm-format - Ongoing
+- OK "live : Int" -> "dead : Maybe Int"
+- -- Randomness aus JavaScript
+- OK processInput mit case-of
+- OK record pattern matching
+- OK letEnemiesShoot mit R.andThen
+- OK Neues "space : Signal Action"
+- -- Auf AnimationFrame umstellen
