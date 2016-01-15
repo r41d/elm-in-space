@@ -11,9 +11,9 @@ import List as L
 import Text as Txt
 import Time
 
-import List.Extra as LE
-import Maybe.Extra as ME
-import Collision2D as C2D
+import List.Extra as LE -- lift2
+import Maybe.Extra as ME -- isJust
+import Collision2D as C2D -- rectangle, axisAlignedBoundingBox
 import AnimationFrame as AF
 
 
@@ -24,7 +24,7 @@ import AnimationFrame as AF
 -- Resolution: Quarter of Full HD
 resX = 960
 resY = 540
-clock = Time.fps 30
+clock = Time.fps 30 -- AF.frame
 corpseTime = 15 -- specify how long corpses exist
 shotCoefficient = 5 --  0-100, 0 = no shots, 100 = hellfire
 maxShots = 5
@@ -474,7 +474,7 @@ leftNright =
         --(S.filter (\ v -> v.y == 0) {x=0, y=0} Keyboard.arrows)
 
 space : Signal Action
-space = S.map (\v -> if v == True then ShootAction else NothingAction) Keyboard.space
+space = S.map (always ShootAction) (S.filter identity False Keyboard.space)
 
 -- wrap the the jsRNG port in a RngAction
 rngAction : Signal Action
@@ -490,7 +490,7 @@ main = S.map view (S.foldp update initial input)
 
 
 {-
-- UTIL - I hope i can get rid of these once they are added to the 3rd party Libraries
+- UTIL - I hope i can get rid of these once they are added to the Community Libraries
 -}
 
 -- circuithub/elm-list-extra contains this on master (as `removeWhen`) but not in the latest release
@@ -521,7 +521,7 @@ or Nothing if the list is empty.
 getAt : List a -> Int -> Maybe a
 getAt xs idx = List.head <| List.drop idx xs
 
--- TODO: Pull request to elm basics extra
+-- Sent a pull request to dasch/elm-basics-extra
 {-| Round a float
 -}
 roundF = toFloat << round
