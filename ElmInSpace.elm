@@ -2,18 +2,19 @@ module ElmInSpace (..) where
 
 import Graphics.Collage as C
 import Graphics.Element as E
-import Signal
 import Keyboard
-import Time
-import Color
-import List as L
+import Signal as S
 import Random as R
-import Text
+import Color as C
 import Maybe as M
+import List as L
+import Text as Txt
+import Time
 
 import List.Extra as LE
 import Maybe.Extra as ME
-import Collision2D as Coll
+import Collision2D as C2D
+import AnimationFrame as AF
 
 
 {-
@@ -38,7 +39,7 @@ worldBackground = False -- display the world in the background
 
 port jsRNG : Signal Int
 
---rngMailbox = Signal.mailbox Int
+--rngMailbox = S.mailbox Int
 
 
 {-
@@ -306,9 +307,9 @@ spawnShot world { x, y } = {world | shotsE = {x=x, y=y} :: world.shotsE}
 - COLLISION
 -}
 
-playerrect world = Coll.rectangle (fst (playerpos world.playerX)) (snd (playerpos world.playerX)) 52 32
-enemyrect e = Coll.rectangle e.x e.y (toFloat (enemywidth e.kind)) 24
-shotrect s = Coll.rectangle s.x s.y 6 12
+playerrect world = C2D.rectangle (fst (playerpos world.playerX)) (snd (playerpos world.playerX)) 52 32
+enemyrect e = C2D.rectangle e.x e.y (toFloat (enemywidth e.kind)) 24
+shotrect s = C2D.rectangle s.x s.y 6 12
 
 
 shotEnemyCollision : World -> World -- collide player shots with enemies
@@ -316,8 +317,8 @@ shotEnemyCollision ({charge, enemies, shotsP} as world) =
     let
         enemyRects = L.map enemyrect (aliveEnemies world)
         playerShotsRects = L.map shotrect shotsP
-        hitByShot e = L.any (\sr -> Coll.axisAlignedBoundingBox (enemyrect e) sr) playerShotsRects
-        hitAnEnemy s = L.any (\er -> Coll.axisAlignedBoundingBox (shotrect s) er) enemyRects
+        hitByShot e = L.any (\sr -> C2D.axisAlignedBoundingBox (enemyrect e) sr) playerShotsRects
+        hitAnEnemy s = L.any (\er -> C2D.axisAlignedBoundingBox (shotrect s) er) enemyRects
         hitEnemies = L.filter hitByShot (aliveEnemies world)
     in
         {world | charge = min maxShots (charge + L.length hitEnemies)
@@ -329,8 +330,8 @@ shotPlayerCollision : World -> World -- collide enemy shots with the player
 shotPlayerCollision ({lives, enemies, shotsE} as world) =
     let
         enemyShotsRects = L.map shotrect shotsE
-        playerHit = L.any (\sr -> Coll.axisAlignedBoundingBox (playerrect world) sr) enemyShotsRects
-        hitThePlayer s = Coll.axisAlignedBoundingBox (playerrect world) (shotrect s)
+        playerHit = L.any (\sr -> C2D.axisAlignedBoundingBox (playerrect world) sr) enemyShotsRects
+        hitThePlayer s = C2D.axisAlignedBoundingBox (playerrect world) (shotrect s)
     in
         {world | lives = if playerHit then lives - 1 else lives
                , shotsE = unfilter hitThePlayer shotsE}
@@ -392,13 +393,13 @@ changeMode world =
 view : World -> E.Element
 view world =
     let
-        redCenterString pos str = zero pos << C.toForm << E.centered << Text.height 40 << Text.color Color.red << Text.fromString <| str
+        redCenterString pos str = zero pos << C.toForm << E.centered << Txt.height 40 << Txt.color C.red << Txt.fromString <| str
     in
-        C.collage resX resY <| [ C.filled Color.black (C.rect resX resY)
+        C.collage resX resY <| [ C.filled C.black (C.rect resX resY)
                                 --    , starsky... ;)
                                ]
                                -- this kille the whole application if worldBackground==True, WTF
-                               --   ++ if worldBackground then [C.toForm << E.size (resX-50) (resY-100) << E.color (Color.greyscale 0.8) <| E.show world] else []
+                               --   ++ if worldBackground then [C.toForm << E.size (resX-50) (resY-100) << E.color (C.greyscale 0.8) <| E.show world] else []
                                ++ [player world.playerX]
                                ++ (List.map (enemy world) world.enemies)
                                ++ (List.map shotP world.shotsP)
@@ -417,9 +418,9 @@ view world =
 
 header : World -> List C.Form
 header w = [ zero (900, 10) << C.toForm <| E.image 32 32 "img/heart.png"
-           , zero (875, 10) << C.toForm <| E.centered << Text.height 18 << Text.color Color.red << Text.fromString <| toString w.lives
+           , zero (875, 10) << C.toForm <| E.centered << Txt.height 18 << Txt.color C.red << Txt.fromString <| toString w.lives
            , zero (800, 10) << C.toForm <| E.image 32 32 "img/lightning.png"
-           , zero (775, 10) << C.toForm <| E.centered << Text.height 18 << Text.color Color.blue << Text.fromString <| toString w.charge
+           , zero (775, 10) << C.toForm <| E.centered << Txt.height 18 << Txt.color C.blue << Txt.fromString <| toString w.charge
            ]
 
 -- Sprites
@@ -459,25 +460,25 @@ zero (x,y) f = C.move (x,-y) (C.move (-450,250) f)
 -}
 
 input : Signal Action
-input = Signal.mergeMany [rngAction, leftNright, space]
+input = S.mergeMany [rngAction, leftNright, space]
 
 -- sampleOn : Signal a -> Signal b -> Signal b
 leftNright : Signal Action
 leftNright =
-    Signal.sampleOn clock
-        (Signal.map
+    S.sampleOn clock
+        (S.map
           (\ v -> if v == {x=-1, y=0} then LeftAction
                   else if v == {x=1, y=0} then RightAction
                   else NothingAction)
           Keyboard.arrows)
-        --(Signal.filter (\ v -> v.y == 0) {x=0, y=0} Keyboard.arrows)
+        --(S.filter (\ v -> v.y == 0) {x=0, y=0} Keyboard.arrows)
 
 space : Signal Action
-space = Signal.map (\v -> if v == True then ShootAction else NothingAction) Keyboard.space
+space = S.map (\v -> if v == True then ShootAction else NothingAction) Keyboard.space
 
 -- wrap the the jsRNG port in a RngAction
 rngAction : Signal Action
-rngAction = Signal.map RngAction jsRNG
+rngAction = S.map RngAction jsRNG
 
 
 {-
@@ -485,7 +486,7 @@ rngAction = Signal.map RngAction jsRNG
 -}
 
 main : Signal E.Element
-main = Signal.map view (Signal.foldp update initial input)
+main = S.map view (S.foldp update initial input)
 
 
 {-
