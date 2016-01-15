@@ -1,4 +1,4 @@
-module Main (..) where
+module ElmInSpace (..) where
 
 import Graphics.Collage as C
 import Graphics.Element as E
@@ -36,7 +36,7 @@ worldBackground = False -- display the world in the background
 - PORT
 -}
 
---port rngJS : Signal Int
+port jsRNG : Signal Int
 
 --rngMailbox = Signal.mailbox Int
 
@@ -56,6 +56,7 @@ type alias World = -- game world
     , shotsP : List Shot
     , shotsE : List Shot
     , seed : R.Seed -- meh
+  --  , animationState : AnimationState
     }
 
 isAlive : Enemy -> Bool
@@ -107,6 +108,13 @@ type Action
     | RightAction
     | ShootAction
     | NothingAction
+    | RngAction Int
+
+
+--type alias AnimationState =
+--    Maybe
+--        { prevClockTime : Time.Time
+--        , elapsedTime : Time.Time }
 
 
 {-
@@ -134,7 +142,9 @@ initial = { mode = PreIngame
           , counter = 0
           , shotsP = []
           , shotsE = []
-          , seed = R.initialSeed 5014718317
+          , seed = R.initialSeed 5014718317 -- this one's not actually used,
+                                            -- we get an initialSeed from javascript at the start
+   --       , animationState = Nothing
           }
 
 
@@ -147,9 +157,7 @@ update act world =
     case world.mode of
         PreIngame ->
             processInputPreIngame act world
-            |> moveShots
-            >> filterDeadShots
-            >> incrementCounter
+            |> incrementCounter
         Ingame ->
             processInputIngame act world
             |> moveShots
@@ -170,18 +178,6 @@ update act world =
             |> filterDeadShots
 
 
-updateGameMode : World -> World
-updateGameMode world =
-    case world.mode of
-        PreIngame ->
-            { world | mode = world.mode }
-        Ingame ->
-            { world | mode = world.mode }
-        Victory ->
-            { world | mode = world.mode }
-        Defeat ->
-            { world | mode = world.mode }
-
 
 {-
 - PRE INGAME
@@ -192,6 +188,9 @@ processInputPreIngame act world =
     case act of
         ShootAction ->
             { world | mode = Ingame }
+        -- javascript side sent us the initial seed
+        RngAction rng ->
+            { world | seed = R.initialSeed rng }
         _ ->
             world
 
@@ -217,6 +216,9 @@ processInputIngame act ({ playerX, charge, shotsP } as world) =
                 world
         NothingAction ->
             world
+        -- well, we already are ingame, but if JS wants to send us a new initialSeed, we'll take it
+        RngAction rng ->
+            { world | seed = R.initialSeed rng }
 
 
 newplayershot : World -> Shot
@@ -352,8 +354,23 @@ grantCharge ({ charge } as world) =
   then {world | charge = min maxShots (charge+1)}
   else world
 
-incrementCounter : World -> World
-incrementCounter world = { world | counter = (world.counter + 1) % 1200 }
+incrementCounter : {-Time.Time ->-} World -> World
+incrementCounter world =
+    { world | counter = (world.counter + 1) % 1200 }
+
+--incrementCounter {-newClockTime-} world =
+--    let
+--        newElapsedTime =
+--            case world.animationState of
+--                Nothing ->
+--                    0
+--                Just {elapsedTime, prevClockTime} ->
+--                  elapsedTime + (newClockTime - prevClockTime)
+--    in
+--        if newElapsedTime > duration then
+--            { animationState = Nothing }
+--        else
+--            { animationState = Just { elapsedTime = newElapsedTime, prevClockTime = newClockTime } }
 
 changeMode : World -> World
 changeMode world =
@@ -399,10 +416,10 @@ view world =
 
 
 header : World -> List C.Form
-header w = [ zero (900, 10) <| C.toForm <| E.image 32 32 "img/heart.png"
-           , zero (875, 10) <| C.toForm <| E.centered <| Text.color Color.red <| Text.fromString <| toString w.lives
-           , zero (800, 10) <| C.toForm <| E.image 32 32 "img/lightning.png"
-           , zero (775, 10) <| C.toForm <| E.centered <| Text.color Color.blue <| Text.fromString <| toString w.charge
+header w = [ zero (900, 10) << C.toForm <| E.image 32 32 "img/heart.png"
+           , zero (875, 10) << C.toForm <| E.centered << Text.height 18 << Text.color Color.red << Text.fromString <| toString w.lives
+           , zero (800, 10) << C.toForm <| E.image 32 32 "img/lightning.png"
+           , zero (775, 10) << C.toForm <| E.centered << Text.height 18 << Text.color Color.blue << Text.fromString <| toString w.charge
            ]
 
 -- Sprites
@@ -442,7 +459,7 @@ zero (x,y) f = C.move (x,-y) (C.move (-450,250) f)
 -}
 
 input : Signal Action
-input = Signal.merge leftNright space
+input = Signal.mergeMany [rngAction, leftNright, space]
 
 -- sampleOn : Signal a -> Signal b -> Signal b
 leftNright : Signal Action
@@ -454,8 +471,13 @@ leftNright =
                   else NothingAction)
           Keyboard.arrows)
         --(Signal.filter (\ v -> v.y == 0) {x=0, y=0} Keyboard.arrows)
+
 space : Signal Action
 space = Signal.map (\v -> if v == True then ShootAction else NothingAction) Keyboard.space
+
+-- wrap the the jsRNG port in a RngAction
+rngAction : Signal Action
+rngAction = Signal.map RngAction jsRNG
 
 
 {-

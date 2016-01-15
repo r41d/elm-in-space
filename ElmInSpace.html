@@ -3,16 +3,32 @@
   <head>
     <title>Elm In Space!</title>
     <script type="text/javascript" src="ElmInSpace.js"></script>
+    <style>
+      body {
+        background-color: #000000;
+        font-family: helvetica, arial, sans-serif;
+        font-size: 14px;
+      }
+      #elminspace {
+        width:  960px; height: 540px;
+        border: 1px solid #111111;
+        margin: auto; position: absolute;
+        left: 0; right: 0; top: 0; bottom: 15%;
+      }
+    </style>
   </head>
 
   <body>
-    <div id="elminspace" style="width:960px; height:540px;"></div>
+    <div id="elminspace" />
   </body>
 
   <script type="text/javascript">
     var elmDiv = document.getElementById('elminspace');
-    var elminspace = Elm.embed(Elm.ElmInSpace, elmDiv, {rng:[]});
-    elminspace.ports.rng.send([ (Math.random() * 1000000) | 0 ]);
+    var elminspace = Elm.embed(Elm.ElmInSpace, elmDiv, { jsRNG : 0 });
+    // generate a random integer from 0 to 1,000,000
+    var rng = (Math.random() * 1000000) | 0;
+    console.log("Sending rng=" + rng + " to application");
+    elminspace.ports.jsRNG.send(rng);
   </script>
 
 </html>
