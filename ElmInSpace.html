@@ -24,11 +24,11 @@
 
   <script type="text/javascript">
     var elmDiv = document.getElementById('elminspace');
-    var elminspace = Elm.embed(Elm.ElmInSpace, elmDiv, { jsRNG : 0 });
-    // generate a random integer from 0 to 1,000,000
-    var rng = (Math.random() * 1000000) | 0;
+    // generate a random integer ...
+    var rng = (Math.random() * 1000000000) | 0;
     console.log("Sending rng=" + rng + " to application");
-    elminspace.ports.jsRNG.send(rng);
+    // ... and start Elm with it
+    var elminspace = Elm.embed(Elm.ElmInSpace, elmDiv, { jsRNG : rng });
   </script>
 
 </html>

@@ -37,7 +37,7 @@ worldBackground = False -- display the world in the background
 - PORT
 -}
 
-port jsRNG : Signal Int
+port jsRNG : Int
 
 --rngMailbox = S.mailbox Int
 
@@ -143,8 +143,7 @@ initial = { mode = PreIngame
           , counter = 0
           , shotsP = []
           , shotsE = []
-          , seed = R.initialSeed 5014718317 -- this one's not actually used,
-                                            -- we get an initialSeed from javascript at the start
+          , seed = R.initialSeed jsRNG -- we get an initialSeed from javascript at the start
    --       , animationState = Nothing
           }
 
@@ -460,7 +459,7 @@ zero (x,y) f = C.move (x,-y) (C.move (-450,250) f)
 -}
 
 input : Signal Action
-input = S.mergeMany [rngAction, leftNright, space]
+input = S.mergeMany [leftNright, space]
 
 -- sampleOn : Signal a -> Signal b -> Signal b
 leftNright : Signal Action
@@ -475,10 +474,6 @@ leftNright =
 
 space : Signal Action
 space = S.map (always ShootAction) (S.filter identity False Keyboard.space)
-
--- wrap the the jsRNG port in a RngAction
-rngAction : Signal Action
-rngAction = S.map RngAction jsRNG
 
 
 {-
