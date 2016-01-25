@@ -31,7 +31,7 @@ clock = AF.frame -- T.fps 30
 corpseTime = 15 -- specify how long corpses exist
 shotCoefficient = 5 --  0-100, 0 = no shots, 100 = hellfire
 maxShots = 5
-chargeGrantCoefficient = 1000 -- 0-2000, 0=always full shots, 1000=every second, 2000=every two seconds, ...
+chargeGrantCoefficient = 2000 -- 1-5000, 1=always full shots, 1000=every second, 2000=every two seconds, ...
 bitchMode = True -- missed shots come back at you
 worldBackground = False -- display the world in the background
 
@@ -358,7 +358,7 @@ handleCorpses ({ enemies } as world) =
 
 grantCharge : World -> World
 grantCharge ({ charge } as w) =
-  if (animcnt w) % chargeGrantCoefficient == 0
+  if toFloat ((animcnt w) % chargeGrantCoefficient) <= w.delta
   then {w | charge = min maxShots (charge+1)}
   else w
 
@@ -387,8 +387,8 @@ view world =
         C.collage resX resY <| [ C.filled C.black (C.rect resX resY)
                                 --    , starsky... ;)
                                ]
-                               -- this kille the whole application if worldBackground==True, WTF
-                               ++ [C.toForm << E.size (resX-50) (resY-100) << E.color (C.greyscale 0.8) <| E.show world]
+                               -- this kills the whole application if worldBackground==True, WTF
+                               -- k++ [C.toForm << E.size (resX-50) (resY-100) << E.color (C.greyscale 0.8) <| E.show world]
                                ++ [player world.playerX]
                                ++ (List.map (enemy world) world.enemies)
                                ++ (List.map shotP world.shotsP)
