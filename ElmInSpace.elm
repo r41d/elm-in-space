@@ -9,7 +9,8 @@ import Color as C
 import Maybe as M
 import List as L
 import Text as Txt
-import Time
+import Time as T
+import Time exposing (Time)
 
 import List.Extra as LE -- lift2
 import Maybe.Extra as ME -- isJust
@@ -24,11 +25,13 @@ import AnimationFrame as AF
 -- Resolution: Quarter of Full HD
 resX = 960
 resY = 540
-clock = Time.fps 30 -- AF.frame
+framesPerSecond = 30
+msPerFrame = 1000 / framesPerSecond
+clock = AF.frame -- T.fps 30
 corpseTime = 15 -- specify how long corpses exist
 shotCoefficient = 5 --  0-100, 0 = no shots, 100 = hellfire
 maxShots = 5
-chargeGrantCoefficient = 60 -- 1-1000, 1=always full shots, 30=every second, 60=every two seconds, ...
+chargeGrantCoefficient = 1000 -- 0-2000, 0=always full shots, 1000=every second, 2000=every two seconds, ...
 bitchMode = True -- missed shots come back at you
 worldBackground = False -- display the world in the background
 
@@ -53,11 +56,12 @@ type alias World = -- game world
     , charge : Int -- number of shots available
     , enemies : List Enemy
     , foeDir : Direction -- direction the enemies are headed
-    , counter : Int -- auxiliary counter for charge granting and enemy animation
+  --  , counter : Int -- auxiliary counter for charge granting and enemy animation
     , shotsP : List Shot
     , shotsE : List Shot
     , seed : R.Seed -- meh
-  --  , animationState : AnimationState
+    , gameTime : Time
+    , delta : Time
     }
 
 isAlive : Enemy -> Bool
@@ -65,7 +69,6 @@ isAlive e = not <| isDead e
 
 isDead : Enemy -> Bool
 isDead e = ME.isJust e.dead
-
 aliveEnemies : World -> List Enemy
 aliveEnemies w = L.filter isAlive w.enemies
 
@@ -73,8 +76,7 @@ deadEnemies : World -> List Enemy
 deadEnemies w = L.filter isDead w.enemies
 
 animcnt : World -> Int
-animcnt w = w.counter % 40
-
+animcnt w = floor (w.gameTime)
 
 type GameMode
     = PreIngame
@@ -112,12 +114,6 @@ type Action
     | RngAction Int
 
 
---type alias AnimationState =
---    Maybe
---        { prevClockTime : Time.Time
---        , elapsedTime : Time.Time }
-
-
 {-
 - INIT
 -}
@@ -140,11 +136,12 @@ initial = { mode = PreIngame
           , charge  = maxShots
           , enemies = initEnemies
           , foeDir = DirR
-          , counter = 0
+    --      , counter = 0
           , shotsP = []
           , shotsE = []
           , seed = R.initialSeed jsRNG -- we get an initialSeed from javascript at the start
-   --       , animationState = Nothing
+          , gameTime = 0 -- mesaure how long the game already lasted
+          , delta = 0 -- delta to the last frame
           }
 
 
@@ -152,44 +149,51 @@ initial = { mode = PreIngame
 - UPDATE
 -}
 
-update : Action -> World -> World
-update act world =
+update : (Time, Action) -> World -> World
+update (time, act) world =
     case world.mode of
-        PreIngame ->
-            processInputPreIngame act world
-            |> incrementCounter
-        Ingame ->
-            processInputIngame act world
-            |> moveShots
-            >> filterDeadShots
-            >> moveEnemies
-            >> letEnemiesShoot
-            >> shotEnemyCollision
-            >> shotPlayerCollision
-            >> handleCorpses
-            >> grantCharge
-            >> incrementCounter
-            >> changeMode
-        Victory ->
-            moveShots world
-            |> filterDeadShots
-        Defeat ->
-            moveShots world
-            |> filterDeadShots
+            PreIngame ->
+                processInputPreIngame time act world
+            Ingame ->
+                time2world time world
+                |> processInputIngame act
+                >> moveShots
+                >> filterDeadShots
+                >> moveEnemies
+                >> letEnemiesShoot
+                >> shotEnemyCollision
+                >> shotPlayerCollision
+                >> handleCorpses
+                >> grantCharge
+                >> changeMode
+            Victory ->
+                time2world time world
+                |> moveShots
+                >> filterDeadShots
+            Defeat ->
+                time2world time world
+                |> moveShots
+                >> filterDeadShots
 
+
+time2world : Time -> World -> World
+time2world time ({ gameTime, delta } as world) =
+    { world | gameTime = gameTime + time
+            , delta = time
+    }
 
 
 {-
 - PRE INGAME
 -}
 
-processInputPreIngame : Action -> World -> World
-processInputPreIngame act world =
+processInputPreIngame : Time -> Action -> World -> World
+processInputPreIngame time act world =
     case act of
         ShootAction ->
             { world | mode = Ingame }
-        -- javascript side sent us the initial seed
         RngAction rng ->
+            -- javascript side sent us the initial seed
             { world | seed = R.initialSeed rng }
         _ ->
             world
@@ -231,8 +235,11 @@ newplayershot { playerX } =
 
 moveShots : World -> World
 moveShots ({ shotsP, shotsE } as world) =
-    {world | shotsP = L.map (\s -> {s | y=s.y-5}) shotsP
-           , shotsE = L.map (\s -> {s | y=s.y+5}) shotsE }
+  let
+      normalize z = z * world.delta / msPerFrame
+  in
+      {world | shotsP = L.map (\s -> {s | y=s.y-(normalize 5)}) shotsP
+             , shotsE = L.map (\s -> {s | y=s.y+(normalize 5)}) shotsE }
 
 
 filterDeadShots : World -> World
@@ -245,10 +252,11 @@ filterDeadShots ({ shotsP, shotsE } as world) =
 moveEnemies : World -> World
 moveEnemies ({ enemies, foeDir } as world) =
     let
+        normalize z = z * world.delta / msPerFrame
         xmin = L.minimum (L.map .x enemies)
         xmax = L.maximum (L.map .x enemies)
         ymax = L.maximum (L.map .y enemies)
-        moveSingleEnemy e x' y' = {e | x=e.x+x',  y=e.y+y'}
+        moveSingleEnemy e x' y' = {e | x=e.x+(normalize x'),  y=e.y+(normalize y')}
         moveAllLeft = L.map (\e -> moveSingleEnemy e -2 0) enemies
         moveAllRight = L.map (\e -> moveSingleEnemy e 2 0) enemies
         moveAllDown = L.map (\e -> moveSingleEnemy e 0 1) enemies
@@ -349,28 +357,10 @@ handleCorpses ({ enemies } as world) =
         {world | enemies = stillThere}
 
 grantCharge : World -> World
-grantCharge ({ charge } as world) =
-  if world.counter % chargeGrantCoefficient == 0
-  then {world | charge = min maxShots (charge+1)}
-  else world
-
-incrementCounter : {-Time.Time ->-} World -> World
-incrementCounter world =
-    { world | counter = (world.counter + 1) % 1200 }
-
---incrementCounter {-newClockTime-} world =
---    let
---        newElapsedTime =
---            case world.animationState of
---                Nothing ->
---                    0
---                Just {elapsedTime, prevClockTime} ->
---                  elapsedTime + (newClockTime - prevClockTime)
---    in
---        if newElapsedTime > duration then
---            { animationState = Nothing }
---        else
---            { animationState = Just { elapsedTime = newElapsedTime, prevClockTime = newClockTime } }
+grantCharge ({ charge } as w) =
+  if (animcnt w) % chargeGrantCoefficient == 0
+  then {w | charge = min maxShots (charge+1)}
+  else w
 
 changeMode : World -> World
 changeMode world =
@@ -398,7 +388,7 @@ view world =
                                 --    , starsky... ;)
                                ]
                                -- this kille the whole application if worldBackground==True, WTF
-                               --   ++ if worldBackground then [C.toForm << E.size (resX-50) (resY-100) << E.color (C.greyscale 0.8) <| E.show world] else []
+                               ++ [C.toForm << E.size (resX-50) (resY-100) << E.color (C.greyscale 0.8) <| E.show world]
                                ++ [player world.playerX]
                                ++ (List.map (enemy world) world.enemies)
                                ++ (List.map shotP world.shotsP)
@@ -423,8 +413,6 @@ header w = [ zero (900, 10) << C.toForm <| E.image 32 32 "img/heart.png"
            ]
 
 -- Sprites
--- TODO: clean this up a bit
-
 player : Int -> C.Form
 player pX = zero (playerpos pX) (C.toForm (E.image 52 32 "img/player.png"))
 
@@ -437,7 +425,7 @@ enemywidth x = 24 + (8 - 2 * (x-2)) * (x-1) -- enemy_kind -> int
 enemy : World -> Enemy -> C.Form
 enemy w e =
     let
-        ab w = if animcnt w <= 20 then "a" else "b"
+        ab w = if animcnt w % 1200 <= 600 then "a" else "b"
         livingenemy w e = E.image (enemywidth e.kind) 24 ("img/enemy"++toString e.kind++ab w++"3.png")
         deadenemy = E.image 36 24 "img/dead3.png"
     in
@@ -458,22 +446,24 @@ zero (x,y) f = C.move (x,-y) (C.move (-450,250) f)
 - INPUT
 -}
 
-input : Signal Action
-input = S.mergeMany [leftNright, space]
+input : Signal (Time, Action)
+input = S.merge leftNright space
 
--- sampleOn : Signal a -> Signal b -> Signal b
-leftNright : Signal Action
+leftNright : Signal (Time, Action)
 leftNright =
-    S.sampleOn clock
-        (S.map
-          (\ v -> if v == {x=-1, y=0} then LeftAction
-                  else if v == {x=1, y=0} then RightAction
-                  else NothingAction)
-          Keyboard.arrows)
-        --(S.filter (\ v -> v.y == 0) {x=0, y=0} Keyboard.arrows)
+    Signal.sampleOn
+        clock
+        (Signal.map2 (,)
+            (clock)
+            (S.map
+              (\ v -> if v == {x=-1, y=0} then LeftAction
+                      else if v == {x=1, y=0} then RightAction
+                      else NothingAction)
+              Keyboard.arrows)
+        )
 
-space : Signal Action
-space = S.map (always ShootAction) (S.filter identity False Keyboard.space)
+space : Signal (Time, Action)
+space = S.map2 (,) clock (S.map (always ShootAction) (S.filter identity False Keyboard.space))
 
 
 {-
