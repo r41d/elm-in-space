@@ -29,7 +29,7 @@ framesPerSecond = 30
 msPerFrame = 1000 / framesPerSecond
 clock = AF.frame -- T.fps 30
 corpseTime = 15 -- specify how long corpses exist
-shotCoefficient = 5 --  0-100, 0 = no shots, 100 = hellfire
+shotCoefficient = 4 -- 0-100, 0 = no shots, 100 = hellfire
 maxShots = 5
 chargeGrantCoefficient = 2000 -- 1-5000, 1=always full shots, 1000=every second, 2000=every two seconds, ...
 bitchMode = True -- missed shots come back at you
@@ -56,7 +56,6 @@ type alias World = -- game world
     , charge : Int -- number of shots available
     , enemies : List Enemy
     , foeDir : Direction -- direction the enemies are headed
-  --  , counter : Int -- auxiliary counter for charge granting and enemy animation
     , shotsP : List Shot
     , shotsE : List Shot
     , seed : R.Seed -- meh
@@ -65,18 +64,11 @@ type alias World = -- game world
     }
 
 isAlive : Enemy -> Bool
-isAlive e = not <| isDead e
-
-isDead : Enemy -> Bool
-isDead e = ME.isJust e.dead
-aliveEnemies : World -> List Enemy
-aliveEnemies w = L.filter isAlive w.enemies
-
-deadEnemies : World -> List Enemy
-deadEnemies w = L.filter isDead w.enemies
+isAlive e = not <| ME.isJust e.dead
 
 animcnt : World -> Int
 animcnt w = floor (w.gameTime)
+
 
 type GameMode
     = PreIngame
@@ -89,7 +81,6 @@ type Direction
     = DirL
     | DirR
     | DirD Int Direction -- heading down for Int steps and then turning to Direction
-
 
 
 type alias Enemy =
@@ -135,7 +126,6 @@ initial = { mode = PreIngame
           , charge  = maxShots
           , enemies = initEnemies
           , foeDir = DirR
-    --      , counter = 0
           , shotsP = []
           , shotsE = []
           , seed = R.initialSeed jsRNG -- we get an initialSeed from javascript at the start
@@ -217,7 +207,6 @@ processInputIngame act ({ playerX, charge, shotsP } as world) =
         NothingAction ->
             world
 
-
 newplayershot : World -> Shot
 newplayershot { playerX } =
     let
@@ -230,9 +219,10 @@ moveShots : World -> World
 moveShots ({ shotsP, shotsE } as world) =
   let
       normalize z = z * world.delta / msPerFrame
+      yDiff = normalize 5
   in
-      {world | shotsP = L.map (\s -> {s | y=s.y-(normalize 5)}) shotsP
-             , shotsE = L.map (\s -> {s | y=s.y+(normalize 5)}) shotsE }
+      {world | shotsP = L.map (\s -> {s | y = s.y - yDiff}) shotsP
+             , shotsE = L.map (\s -> {s | y = s.y + yDiff}) shotsE }
 
 
 filterDeadShots : World -> World
@@ -245,38 +235,30 @@ filterDeadShots ({ shotsP, shotsE } as world) =
 moveEnemies : World -> World
 moveEnemies ({ enemies, foeDir } as world) =
     let
-        normalize z = z * world.delta / msPerFrame
-        xmin = L.minimum (L.map .x enemies)
-        xmax = L.maximum (L.map .x enemies)
+        moveCoefficient = world.delta / msPerFrame
+        normalize z = z * moveCoefficient
+        enemiesX = L.map .x enemies
+        xmin = L.minimum enemiesX
+        xmax = L.maximum enemiesX
         ymax = L.maximum (L.map .y enemies)
         moveSingleEnemy e x' y' = {e | x=e.x+(normalize x'),  y=e.y+(normalize y')}
-        moveAllLeft = L.map (\e -> moveSingleEnemy e -2 0) enemies
-        moveAllRight = L.map (\e -> moveSingleEnemy e 2 0) enemies
-        moveAllDown = L.map (\e -> moveSingleEnemy e 0 1) enemies
-        invAtBottom y = y >= 380
-        invAtLeftEdge x = x <= 30
-        invAtRightEdge x = x >= resX-100
-        -- somewhat of code duplication, TODO: figure out a readable(!) shorter alternative
-        onlyLR = -- only move left to right
-          case world.foeDir of
-            DirL     -> {world | enemies = moveAllLeft
-                               , foeDir = ME.mapDefault foeDir (\minX -> if invAtLeftEdge minX then DirR else foeDir) xmin}
-            DirR     -> {world | enemies = moveAllRight
-                               , foeDir = ME.mapDefault foeDir (\maxX -> if invAtRightEdge maxX then DirL else foeDir) xmax}
-            DirD _ d -> {world | foeDir = d} -- stop moving down and just turn to the next direction
-        nextdir = -- also move down when reaching the left/right border
-          case foeDir of
-            DirL     -> {world | enemies = moveAllLeft
-                               , foeDir = ME.mapDefault foeDir (\minX -> if invAtLeftEdge minX then DirD 12 DirR else foeDir) xmin}
-            DirR     -> {world | enemies = moveAllRight
-                               , foeDir = ME.mapDefault foeDir (\maxX -> if invAtRightEdge maxX then DirD 12 DirL else foeDir) xmax}
-            DirD 0 d -> {world | foeDir = d}
-            DirD i d -> {world | enemies = moveAllDown
-                               , foeDir = DirD (i-1) d}
+        moveAllLeft es = L.map (\e -> moveSingleEnemy e -2 0) es
+        moveAllRight es = L.map (\e -> moveSingleEnemy e 2 0) es
+        moveAllDown es = L.map (\e -> moveSingleEnemy e 0 1) es
+        atBottom y = y >= 380
+        atLeftEdge x = x <= 30
+        atRightEdge x = x >= resX-100
+        onlyLR = ME.mapDefault False atBottom ymax
     in
-        if ME.mapDefault False invAtBottom ymax
-        then onlyLR
-        else nextdir
+        case foeDir of
+            DirL     -> {world | enemies = moveAllLeft enemies
+                               , foeDir = ME.mapDefault foeDir (\minX -> if atLeftEdge minX then (if onlyLR then DirR else DirD 12 DirR) else foeDir) xmin}
+            DirR     -> {world | enemies = moveAllRight enemies
+                               , foeDir = ME.mapDefault foeDir (\maxX -> if atRightEdge maxX then (if onlyLR then DirL else DirD 12 DirL) else foeDir) xmax}
+            DirD i d -> if onlyLR || i<=0
+                        then {world | foeDir = d}
+                        else {world | enemies = moveAllDown enemies
+                                    , foeDir = DirD (i-1) d}
 
 
 letEnemiesShoot : World -> World
@@ -315,11 +297,12 @@ shotrect s = C2D.rectangle s.x s.y 6 12
 shotEnemyCollision : World -> World -- collide player shots with enemies
 shotEnemyCollision ({charge, enemies, shotsP} as world) =
     let
-        enemyRects = L.map enemyrect (aliveEnemies world)
+        aliveEnemies = L.filter isAlive enemies
+        enemyRects = L.map enemyrect aliveEnemies
         playerShotsRects = L.map shotrect shotsP
         hitByShot e = L.any (\sr -> C2D.axisAlignedBoundingBox (enemyrect e) sr) playerShotsRects
         hitAnEnemy s = L.any (\er -> C2D.axisAlignedBoundingBox (shotrect s) er) enemyRects
-        hitEnemies = L.filter hitByShot (aliveEnemies world)
+        hitEnemies = L.filter hitByShot aliveEnemies
     in
         {world | charge = min maxShots (charge + L.length hitEnemies)
                , enemies = LE.removeWhen hitByShot enemies
@@ -357,7 +340,7 @@ grantCharge ({ charge } as w) =
 
 changeMode : World -> World
 changeMode world =
-    if L.isEmpty world.enemies
+    if world.enemies |> L.isEmpty
     then
         { world | mode = Victory }
     else
