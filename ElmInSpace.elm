@@ -156,23 +156,23 @@ update (time, act) world =
             Ingame ->
                 time2world time world
                 |> processInputIngame act
-                >> moveShots
-                >> filterDeadShots
-                >> moveEnemies
-                >> letEnemiesShoot
-                >> shotEnemyCollision
-                >> shotPlayerCollision
-                >> handleCorpses
-                >> grantCharge
-                >> changeMode
+                |> moveShots
+                |> filterDeadShots
+                |> moveEnemies
+                |> letEnemiesShoot
+                |> shotEnemyCollision
+                |> shotPlayerCollision
+                |> handleCorpses
+                |> grantCharge
+                |> changeMode
             Victory ->
                 time2world time world
                 |> moveShots
-                >> filterDeadShots
+                |> filterDeadShots
             Defeat ->
                 time2world time world
                 |> moveShots
-                >> filterDeadShots
+                |> filterDeadShots
 
 
 time2world : Time -> World -> World
@@ -375,13 +375,13 @@ changeMode world =
 view : World -> E.Element
 view world =
     let
-        redCenterString pos str = zero pos << C.toForm << E.centered << Txt.height 40 << Txt.color C.red << Txt.fromString <| str
+        redCenterString pos str = zero pos <| C.toForm <| E.centered <| Txt.height 40 <| Txt.color C.red <| Txt.fromString <| str
     in
         C.collage resX resY <| [ C.filled C.black (C.rect resX resY)
-                                --    , starsky... ;)
+                                --    , starsky...?
                                ]
                                -- this kills the whole application if worldBackground==True, WTF
-                               -- k++ [C.toForm << E.size (resX-50) (resY-100) << E.color (C.greyscale 0.8) <| E.show world]
+                               -- ++ [C.toForm << E.size (resX-50) (resY-100) << E.color (C.greyscale 0.8) <| E.show world]
                                ++ [player world.playerX]
                                ++ (List.map (enemy world) world.enemies)
                                ++ (List.map shotP world.shotsP)
@@ -399,10 +399,10 @@ view world =
 
 
 header : World -> List C.Form
-header w = [ zero (900, 10) << C.toForm <| E.image 32 32 "img/heart.png"
-           , zero (875, 10) << C.toForm <| E.centered << Txt.height 18 << Txt.color C.red << Txt.fromString <| toString w.lives
-           , zero (800, 10) << C.toForm <| E.image 32 32 "img/lightning.png"
-           , zero (775, 10) << C.toForm <| E.centered << Txt.height 18 << Txt.color C.blue << Txt.fromString <| toString w.charge
+header w = [ zero (900, 10) <| C.toForm <| E.image 32 32 "img/heart.png"
+           , zero (875, 10) <| C.toForm <| E.centered <| Txt.height 18 <| Txt.color C.red <| Txt.fromString <| toString w.lives
+           , zero (800, 10) <| C.toForm <| E.image 32 32 "img/lightning.png"
+           , zero (775, 10) <| C.toForm <| E.centered <| Txt.height 18 <| Txt.color C.blue <| Txt.fromString <| toString w.charge
            ]
 
 -- Sprites
