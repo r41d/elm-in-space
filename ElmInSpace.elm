@@ -237,8 +237,8 @@ moveShots ({ shotsP, shotsE } as world) =
 
 filterDeadShots : World -> World
 filterDeadShots ({ shotsP, shotsE } as world) =
-    {world | shotsP = unfilter (\s -> s.y < -20) shotsP
-           , shotsE = (unfilter (\s -> s.y > resY) shotsE)
+    {world | shotsP = LE.removeWhen (\s -> s.y < -20) shotsP
+           , shotsE = (LE.removeWhen (\s -> s.y > resY) shotsE)
                       ++ if bitchMode then L.filter (\s -> s.y < -20) shotsP else []}
 
 
@@ -322,9 +322,9 @@ shotEnemyCollision ({charge, enemies, shotsP} as world) =
         hitEnemies = L.filter hitByShot (aliveEnemies world)
     in
         {world | charge = min maxShots (charge + L.length hitEnemies)
-               , enemies = unfilter hitByShot enemies
+               , enemies = LE.removeWhen hitByShot enemies
                            ++ L.map (\e -> {e | dead = Just corpseTime}) hitEnemies
-               , shotsP = unfilter hitAnEnemy shotsP }
+               , shotsP = LE.removeWhen hitAnEnemy shotsP }
 
 shotPlayerCollision : World -> World -- collide enemy shots with the player
 shotPlayerCollision ({lives, enemies, shotsE} as world) =
@@ -334,7 +334,7 @@ shotPlayerCollision ({lives, enemies, shotsE} as world) =
         hitThePlayer s = C2D.axisAlignedBoundingBox (playerrect world) (shotrect s)
     in
         {world | lives = if playerHit then lives - 1 else lives
-               , shotsE = unfilter hitThePlayer shotsE}
+               , shotsE = LE.removeWhen hitThePlayer shotsE}
 
 
 {-
@@ -470,12 +470,6 @@ main = S.map view (S.foldp update initial input)
 {-
 - UTIL - I hope i can get rid of these once they are added to the Community Libraries
 -}
-
--- circuithub/elm-list-extra contains this on master (as `removeWhen`) but not in the latest release
-{-| Keep only elements that DON'T satisfy the predicate.
--}
-unfilter : (a -> Bool) -> List a -> List a
-unfilter p l = L.filter (\a -> not (p a)) l
 
 -- Sent a pull request to circuithub/elm-maybe-extra
 {-| Take a Maybe, a predicate and two values of Type b.
