@@ -12,10 +12,10 @@ import Text as Txt
 import Time as T
 import Time exposing (Time)
 
-import List.Extra as LE -- lift2
-import Maybe.Extra as ME -- isJust
-import Collision2D as C2D -- rectangle, axisAlignedBoundingBox
-import AnimationFrame as AF
+import List.Extra as LE        -- lift2, removeWhen
+import Maybe.Extra as ME       -- isJust, mapDefault
+import Collision2D as C2D      -- rectangle, axisAlignedBoundingBox
+import AnimationFrame as AF    -- frame
 
 
 {-
@@ -296,7 +296,7 @@ randomEnemy enemies =
     let
         idx = R.int 0 (L.length enemies - 1)
     in
-        R.map (\i -> (enemies `getAt` i)) idx
+        R.map (\i -> (enemies `LE.getAt` i)) idx
 
 
 spawnShot : World -> Enemy -> World
@@ -470,13 +470,6 @@ main = S.map view (S.foldp update initial input)
 {-
 - UTIL - I hope i can get rid of these once they are added to the Community Libraries
 -}
-
--- Sent a pull request to circuithub/elm-list-extra
-{-| Returns Just the element at the given index in the list,
-or Nothing if the list is empty.
--}
-getAt : List a -> Int -> Maybe a
-getAt xs idx = List.head <| List.drop idx xs
 
 -- Sent a pull request to dasch/elm-basics-extra
 {-| Round a float
