@@ -260,21 +260,21 @@ moveEnemies ({ enemies, foeDir } as world) =
         onlyLR = -- only move left to right
           case world.foeDir of
             DirL     -> {world | enemies = moveAllLeft
-                               , foeDir = maybeCondition' xmin (\minX -> if invAtLeftEdge minX then DirR else foeDir) foeDir}
+                               , foeDir = ME.mapDefault foeDir (\minX -> if invAtLeftEdge minX then DirR else foeDir) xmin}
             DirR     -> {world | enemies = moveAllRight
-                               , foeDir = maybeCondition' xmax (\maxX -> if invAtRightEdge maxX then DirL else foeDir) foeDir}
+                               , foeDir = ME.mapDefault foeDir (\maxX -> if invAtRightEdge maxX then DirL else foeDir) xmax}
             DirD _ d -> {world | foeDir = d} -- stop moving down and just turn to the next direction
         nextdir = -- also move down when reaching the left/right border
           case foeDir of
             DirL     -> {world | enemies = moveAllLeft
-                               , foeDir = maybeCondition' xmin (\minX -> if invAtLeftEdge minX then DirD 12 DirR else foeDir) foeDir}
+                               , foeDir = ME.mapDefault foeDir (\minX -> if invAtLeftEdge minX then DirD 12 DirR else foeDir) xmin}
             DirR     -> {world | enemies = moveAllRight
-                               , foeDir = maybeCondition' xmax (\maxX -> if invAtRightEdge maxX then DirD 12 DirL else foeDir) foeDir}
+                               , foeDir = ME.mapDefault foeDir (\maxX -> if invAtRightEdge maxX then DirD 12 DirL else foeDir) xmax}
             DirD 0 d -> {world | foeDir = d}
             DirD i d -> {world | enemies = moveAllDown
                                , foeDir = DirD (i-1) d}
     in
-        if maybeCondition' ymax invAtBottom False
+        if ME.mapDefault False invAtBottom ymax
         then onlyLR
         else nextdir
 
@@ -286,7 +286,7 @@ letEnemiesShoot ({ enemies, seed } as world) =
         (maybeRandFoe, s) = R.generate enemyGen seed
         seedWorld = {world | seed = s}
     in
-        maybeCondition' maybeRandFoe (\randFoe -> spawnShot seedWorld randFoe) seedWorld
+        ME.mapDefault seedWorld (\randFoe -> spawnShot seedWorld randFoe) maybeRandFoe
 
 shootNow : R.Generator Bool
 shootNow = R.map (\i -> i <= shotCoefficient) (R.int 1 100)
@@ -345,7 +345,7 @@ handleCorpses : World -> World
 handleCorpses ({ enemies } as world) =
     let
         decremented = L.map (\e -> {e | dead = M.map (\x->x-1) e.dead}) enemies -- decrement .dead for corpses
-        stillThere = L.filter (\e -> maybeCondition' e.dead (\x -> x > 0) True) decremented
+        stillThere = L.filter (\e -> ME.mapDefault True (\x -> x > 0) e.dead) decremented
     in
         {world | enemies = stillThere}
 
@@ -470,21 +470,6 @@ main = S.map view (S.foldp update initial input)
 {-
 - UTIL - I hope i can get rid of these once they are added to the Community Libraries
 -}
-
--- Sent a pull request to circuithub/elm-maybe-extra
-{-| Take a Maybe, a predicate and two values of Type b.
-    Return the first b is the `Maybe` if `Just` and the predicate evaluates to true.
-    Return the second b if the `Maybe` is `Nothing` or if the predicate evaluates to false.
--}
-maybeCondition : Maybe a -> (a -> Bool) -> (a -> b) -> b -> b
-maybeCondition m f b1 b2 =
-  case m of
-    Just a  -> if f a then b1 a else b2
-    Nothing -> b2
-
-maybeCondition' : Maybe a -> (a -> b) -> b -> b
-maybeCondition' m f b2 =
-  Maybe.withDefault b2 (Maybe.map f m)
 
 -- Sent a pull request to circuithub/elm-list-extra
 {-| Returns Just the element at the given index in the list,
