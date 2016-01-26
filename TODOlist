@@ -13,3 +13,5 @@
 - OK Neues "space : Signal Action"
 - OK Auf AnimationFrame umstellen
 - OK RngAction entfernen
+- OK Function composition -> Function application
+- OK switch from self defined helpers to library functions

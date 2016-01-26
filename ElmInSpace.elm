@@ -471,7 +471,7 @@ main = S.map view (S.foldp update initial input)
 - UTIL - I hope i can get rid of these once they are added to the Community Libraries
 -}
 
--- Sent a pull request to dasch/elm-basics-extra
+-- Sent a pull request to dasch/elm-basics-extra, no response from maintainer yet
 {-| Round a float
 -}
 roundF = toFloat << round
