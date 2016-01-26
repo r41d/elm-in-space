@@ -11,4 +11,5 @@
 - OK record pattern matching
 - OK letEnemiesShoot mit R.andThen
 - OK Neues "space : Signal Action"
-- -- Auf AnimationFrame umstellen
+- OK Auf AnimationFrame umstellen
+- OK RngAction entfernen

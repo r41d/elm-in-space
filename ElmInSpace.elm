@@ -111,7 +111,6 @@ type Action
     | RightAction
     | ShootAction
     | NothingAction
-    | RngAction Int
 
 
 {-
@@ -192,9 +191,6 @@ processInputPreIngame time act world =
     case act of
         ShootAction ->
             { world | mode = Ingame }
-        RngAction rng ->
-            -- javascript side sent us the initial seed
-            { world | seed = R.initialSeed rng }
         _ ->
             world
 
@@ -220,9 +216,6 @@ processInputIngame act ({ playerX, charge, shotsP } as world) =
                 world
         NothingAction ->
             world
-        -- well, we already are ingame, but if JS wants to send us a new initialSeed, we'll take it
-        RngAction rng ->
-            { world | seed = R.initialSeed rng }
 
 
 newplayershot : World -> Shot
