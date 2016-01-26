@@ -138,7 +138,7 @@ initial = { mode = PreIngame
 - UPDATE
 -}
 
-update : (Time, Action) -> World -> World
+update : (Maybe Time, Action) -> World -> World
 update (time, act) world =
     case world.mode of
             PreIngame ->
@@ -165,19 +165,22 @@ update (time, act) world =
                 |> filterDeadShots
 
 
-time2world : Time -> World -> World
-time2world time ({ gameTime, delta } as world) =
-    { world | gameTime = gameTime + time
-            , delta = time
-    }
+time2world : Maybe Time -> World -> World
+time2world timeM ({ gameTime, delta } as world) =
+    case timeM of
+        Nothing ->
+            world
+        Just time ->
+            { world | gameTime = gameTime + time
+                    , delta = time }
 
 
 {-
 - PRE INGAME
 -}
 
-processInputPreIngame : Time -> Action -> World -> World
-processInputPreIngame time act world =
+processInputPreIngame : Maybe Time -> Action -> World -> World
+processInputPreIngame _ act world =
     case act of
         ShootAction ->
             { world | mode = Ingame }
@@ -422,15 +425,15 @@ zero (x,y) f = C.move (x,-y) (C.move (-450,250) f)
 - INPUT
 -}
 
-input : Signal (Time, Action)
+input : Signal (Maybe Time, Action)
 input = S.merge leftNright space
 
-leftNright : Signal (Time, Action)
+leftNright : Signal (Maybe Time, Action)
 leftNright =
     Signal.sampleOn
         clock
         (Signal.map2 (,)
-            (clock)
+            (S.map Just clock)
             (S.map
               (\ v -> if v == {x=-1, y=0} then LeftAction
                       else if v == {x=1, y=0} then RightAction
@@ -438,8 +441,10 @@ leftNright =
               Keyboard.arrows)
         )
 
-space : Signal (Time, Action)
-space = S.map2 (,) clock (S.map (always ShootAction) (S.filter identity False Keyboard.space))
+space : Signal (Maybe Time, Action)
+space = S.map2 (,)
+            (S.map (\_->Nothing) clock)
+            (S.map (always ShootAction) (S.filter identity False Keyboard.space))
 
 
 {-
