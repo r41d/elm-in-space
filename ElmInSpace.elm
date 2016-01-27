@@ -16,6 +16,9 @@ import List.Extra as LE        -- lift2, removeWhen
 import Maybe.Extra as ME       -- isJust, mapDefault
 import Collision2D as C2D      -- rectangle, axisAlignedBoundingBox
 import AnimationFrame as AF    -- frame
+import ElmFire as EF
+import ElmFire.Dict as EFD
+import ElmFire.Op as EFO
 
 
 {-
@@ -30,10 +33,18 @@ msPerFrame = 1000 / framesPerSecond
 clock = AF.frame -- T.fps 30
 corpseTime = 15 -- specify how long corpses exist
 shotCoefficient = 4 -- 0-100, 0 = no shots, 100 = hellfire
+initLives = 3
 maxShots = 5
 chargeGrantCoefficient = 2000 -- 1-5000, 1=always full shots, 1000=every second, 2000=every two seconds, ...
 bitchMode = True -- missed shots come back at you
 worldBackground = False -- display the world in the background
+
+
+{-
+- ELM FIRE
+-}
+
+fireBaseURL = "https://elm-in-space.firebaseio.com/"
 
 
 {-
@@ -42,8 +53,6 @@ worldBackground = False -- display the world in the background
 
 port jsRNG : Int
 
---rngMailbox = S.mailbox Int
-
 
 {-
 - DATA
@@ -51,16 +60,21 @@ port jsRNG : Int
 
 type alias World = -- game world
     { mode : GameMode
+      -- player specific:
     , playerX : Int
     , lives : Int
     , charge : Int -- number of shots available
+      -- battle specific:
     , enemies : List Enemy
     , foeDir : Direction -- direction the enemies are headed
     , shotsP : List Shot
     , shotsE : List Shot
+      -- necessary evil (utility):
     , seed : R.Seed -- meh
-    , gameTime : Time
     , delta : Time
+      -- statistics:
+    , gameTime : Time
+    , shotsFired : Int
     }
 
 isAlive : Enemy -> Bool
@@ -122,15 +136,16 @@ initEnemies =
 initial : World
 initial = { mode = PreIngame
           , playerX = 50
-          , lives   = 3
+          , lives   = initLives
           , charge  = maxShots
           , enemies = initEnemies
           , foeDir = DirR
           , shotsP = []
           , shotsE = []
           , seed = R.initialSeed jsRNG -- we get an initialSeed from javascript at the start
-          , gameTime = 0 -- mesaure how long the game already lasted
           , delta = 0 -- delta to the last frame
+          , gameTime = 0 -- mesaure how long the game already lasted
+          , shotsFired = 0 -- count how many shots were fired by the player
           }
 
 
@@ -142,7 +157,7 @@ update : (Maybe Time, Action) -> World -> World
 update (time, act) world =
     case world.mode of
             PreIngame ->
-                processInputPreIngame time act world
+                processInputPreIngame act world
             Ingame ->
                 time2world time world
                 |> processInputIngame act
@@ -166,12 +181,18 @@ update (time, act) world =
 
 
 time2world : Maybe Time -> World -> World
-time2world timeM ({ gameTime, delta } as world) =
+time2world timeM ({ mode, gameTime, delta } as world) =
     case timeM of
         Nothing ->
             world
+        -- time2world is still called when the game is in Victory/Defeat state
+        -- so that remaining shots can still move.
+        -- So we have to ask if we are still ingame and only increase the
+        -- elapsed gameTime if that is the case.
         Just time ->
-            { world | gameTime = gameTime + time
+            { world | gameTime = if mode == Ingame
+                                 then gameTime + time
+                                 else gameTime
                     , delta = time }
 
 
@@ -179,8 +200,8 @@ time2world timeM ({ gameTime, delta } as world) =
 - PRE INGAME
 -}
 
-processInputPreIngame : Maybe Time -> Action -> World -> World
-processInputPreIngame _ act world =
+processInputPreIngame : Action -> World -> World
+processInputPreIngame act world =
     case act of
         ShootAction ->
             { world | mode = Ingame }
@@ -193,7 +214,7 @@ processInputPreIngame _ act world =
 -}
 
 processInputIngame : Action -> World -> World
-processInputIngame act ({ playerX, charge, shotsP } as world) =
+processInputIngame act ({ playerX, charge, shotsP, shotsFired } as world) =
     case act of
         LeftAction ->
             { world | playerX = max 0 (playerX - 1) }
@@ -201,10 +222,9 @@ processInputIngame act ({ playerX, charge, shotsP } as world) =
             { world | playerX = min 105 (playerX + 1) }
         ShootAction ->
             if world.charge > 0 then
-                { world
-                    | charge = charge - 1
-                    , shotsP = (newplayershot world :: shotsP)
-                }
+                { world | charge = charge - 1
+                        , shotsP = (newplayershot world :: shotsP)
+                        , shotsFired = shotsFired+1 }
             else
                 world
         NothingAction ->
@@ -222,7 +242,7 @@ moveShots : World -> World
 moveShots ({ shotsP, shotsE } as world) =
   let
       normalize z = z * world.delta / msPerFrame
-      yDiff = normalize 5
+      yDiff = normalize 6
   in
       {world | shotsP = L.map (\s -> {s | y = s.y - yDiff}) shotsP
              , shotsE = L.map (\s -> {s | y = s.y + yDiff}) shotsE }
@@ -353,6 +373,32 @@ changeMode world =
         else
             world
 
+calculateScore : World -> Int
+calculateScore ({ lives, gameTime, shotsFired } as world) =
+    let
+        -- grant 100 points per remaining live
+        livesScore = 100 * toFloat lives
+        -- Clearing the screen in 60 seconds is a pretty good time,
+        -- ~90 sec can be considered average, over 120 sec is bad.
+        -- Being faster than 60 seconds give more than 100 points.
+        -- Score function which grants 100 points after 60 seconds,
+        -- at 90 seconds it gives 50 points,
+        -- and after 120 seconds it starts giving negative points.
+        gameTimeScore = 100 - (5/3) * ((gameTime/1000)-60)
+        -- There are 60 enemies on the screen, so winning with 60 fires shots is perfect,
+        -- using around 80 shots can be considered normal, over 100 is bad.
+        -- Score function which grants 100 points for 60 used shots,
+        -- at 80 shots it gives 50 points,
+        -- and over 100 shots it starts giving negative points.
+        shotsFiredScore = 100 - (5/2) * (toFloat shotsFired - 60)
+        -- If one would clear the screen in 60 seconds using only the minimum of 60 shots
+        -- while preserving all lives, this would result in a score of 500.
+        -- This is considered VERY hard to beat.
+        totalScore = livesScore + gameTimeScore + shotsFiredScore
+    in
+        -- But we multiply everything by 2 for dramatic effect
+        -- (and because if feels more awesome to reach 1000 points instead of 500)
+        round <| 2 * totalScore
 
 {-
 - VIEW
@@ -366,8 +412,7 @@ view world =
         C.collage resX resY <| [ C.filled C.black (C.rect resX resY)
                                 --    , starsky...?
                                ]
-                               -- this kills the whole application if worldBackground==True, WTF
-                               -- ++ [C.toForm << E.size (resX-50) (resY-100) << E.color (C.greyscale 0.8) <| E.show world]
+                            ++ [C.toForm << E.size (resX-50) (resY-100) << E.color (C.greyscale 0.8) <| E.show world]
                                ++ [player world.playerX]
                                ++ (List.map (enemy world) world.enemies)
                                ++ (List.map shotP world.shotsP)
