@@ -8,8 +8,6 @@
     ],
     "exposed-modules": [],
     "dependencies": {
-        "ThomasWeiser/elmfire": "1.0.4 <= v < 2.0.0",
-        "ThomasWeiser/elmfire-extra": "1.0.3 <= v < 2.0.0",
         "burabure/elm-collision": "2.0.2 <= v < 3.0.0",
         "circuithub/elm-list-extra": "3.9.0 <= v < 4.0.0",
         "circuithub/elm-maybe-extra": "1.6.0 <= v < 2.0.0",

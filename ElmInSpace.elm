@@ -16,9 +16,6 @@ import List.Extra as LE        -- lift2, removeWhen
 import Maybe.Extra as ME       -- isJust, mapDefault
 import Collision2D as C2D      -- rectangle, axisAlignedBoundingBox
 import AnimationFrame as AF    -- frame
-import ElmFire as EF
-import ElmFire.Dict as EFD
-import ElmFire.Op as EFO
 
 
 {-
@@ -41,17 +38,37 @@ worldBackground = False -- display the world in the background
 
 
 {-
-- ELM FIRE
+- PORTS
 -}
 
-fireBaseURL = "https://elm-in-space.firebaseio.com/"
-
-
-{-
-- PORT
--}
-
+-- This port contains the initial random seed sent from the ecmascript side
 port jsRNG : Int
+
+-- This port is used to trigger the queryUsername() function in ecmascript
+port requestUsername : Signal Bool      -- Elm -> EcmaScript
+port requestUsername =
+        S.map
+            (\world ->
+                case world.mode of
+                    Victory vicS -> not <| ME.isJust vicS.username
+                    _ -> False
+            )
+            worldSignal
+
+-- This port is used to pass the queried username from ecmascript back to Elm
+port receiveUsername : Signal String    -- EcmaScript -> Elm
+
+-- This port is used to trigger the submitScore() function in ecmascript
+port submitScore : Signal { score:Score, user:Username }   -- Elm -> EcmaScript
+port submitScore =
+        S.map
+            (\w -> case victoryUsername w of
+                       Just user -> {user = user, score = calculateScore w}
+                       Nothing   -> {user = "", score = 0}
+            )
+            worldSignal
+
+-- Signal.filter : (a -> Bool) -> a -> Signal a -> Signal a
 
 
 {-
@@ -84,12 +101,29 @@ animcnt : World -> Int
 animcnt w = floor (w.gameTime)
 
 
+type alias Username = String
+
+type alias Score = Int
+
 type GameMode
     = PreIngame
     | Ingame
-    | Victory
+    | Victory VictoryState
     | Defeat
 
+type alias VictoryState =
+    { username : Maybe Username -- the username from ecmascript
+    , submitted : Bool -- whether we already submitted to leaderboards
+    }
+
+justVictory : World -> Bool
+justVictory w = ME.isJust (victoryUsername w)
+
+victoryUsername : World -> Maybe (Username)
+victoryUsername world =
+    case world.mode of
+        Victory vicS -> vicS.username
+        _            -> Nothing
 
 type Direction
     = DirL
@@ -116,6 +150,8 @@ type Action
     | RightAction
     | ShootAction
     | NothingAction
+    | UsernameAction String -- for getting username from EcmaScript
+    | SubmittedAction
 
 
 {-
@@ -142,7 +178,7 @@ initial = { mode = PreIngame
           , foeDir = DirR
           , shotsP = []
           , shotsE = []
-          , seed = R.initialSeed jsRNG -- we get an initialSeed from javascript at the start
+          , seed = R.initialSeed jsRNG -- we get an initialSeed from ecmascript at the start
           , delta = 0 -- delta to the last frame
           , gameTime = 0 -- mesaure how long the game already lasted
           , shotsFired = 0 -- count how many shots were fired by the player
@@ -170,8 +206,9 @@ update (time, act) world =
                 |> handleCorpses
                 |> grantCharge
                 |> changeMode
-            Victory ->
+            Victory _ ->
                 time2world time world
+                |> processInputVictory act
                 |> moveShots
                 |> filterDeadShots
             Defeat ->
@@ -208,6 +245,24 @@ processInputPreIngame act world =
         _ ->
             world
 
+{-
+- VICTORY
+-}
+
+processInputVictory : Action -> World -> World
+processInputVictory act world =
+    case act of
+        UsernameAction user ->
+            case world.mode of
+                Victory vicS ->
+                    if vicS.submitted
+                        then world
+                        else {world | mode = Victory {vicS | username=Just user}}
+                _ ->
+                    world
+        _ ->
+            world
+
 
 {-
 - INGAME
@@ -227,7 +282,7 @@ processInputIngame act ({ playerX, charge, shotsP, shotsFired } as world) =
                         , shotsFired = shotsFired+1 }
             else
                 world
-        NothingAction ->
+        _ ->
             world
 
 newplayershot : World -> Shot
@@ -365,7 +420,7 @@ changeMode : World -> World
 changeMode world =
     if world.enemies |> L.isEmpty
     then
-        { world | mode = Victory }
+        { world | mode = Victory { username = Nothing, submitted = False } }
     else
         if world.lives <= 0
         then
@@ -373,7 +428,7 @@ changeMode world =
         else
             world
 
-calculateScore : World -> Int
+calculateScore : World -> Score
 calculateScore ({ lives, gameTime, shotsFired } as world) =
     let
         -- grant 100 points per remaining live
@@ -412,7 +467,7 @@ view world =
         C.collage resX resY <| [ C.filled C.black (C.rect resX resY)
                                 --    , starsky...?
                                ]
-                            ++ [C.toForm << E.size (resX-50) (resY-100) << E.color (C.greyscale 0.8) <| E.show world]
+                    --       ++ [C.toForm << E.size (resX-50) (resY-100) << E.color (C.greyscale 0.8) <| E.show world]
                                ++ [player world.playerX]
                                ++ (List.map (enemy world) world.enemies)
                                ++ (List.map shotP world.shotsP)
@@ -423,8 +478,9 @@ view world =
                                            [redCenterString (450, 300) "Press SPACE to start!"]
                                       Ingame ->
                                            []
-                                      Victory ->
-                                           [redCenterString (450, 300) "You did it! Press F5 for another round."]
+                                      Victory vicS ->
+                                           [redCenterString (450, 300) "You did it!"
+                                           ,redCenterString (450, 350) (if vicS.submitted then "Score submitted" else "Submitting score...")]
                                       Defeat ->
                                            [redCenterString (450, 80) "Try harder next time!"]
 
@@ -471,7 +527,7 @@ zero (x,y) f = C.move (x,-y) (C.move (-450,250) f)
 -}
 
 input : Signal (Maybe Time, Action)
-input = S.merge leftNright space
+input = S.mergeMany [leftNright, space, usernameAction]
 
 leftNright : Signal (Maybe Time, Action)
 leftNright =
@@ -487,17 +543,28 @@ leftNright =
         )
 
 space : Signal (Maybe Time, Action)
-space = S.map2 (,)
-            (S.map (\_->Nothing) clock)
-            (S.map (always ShootAction) (S.filter identity False Keyboard.space))
+space = dontTimestamp <| S.map (always ShootAction) (S.filter identity False Keyboard.space)
+
+--- wrap the the receiveUsername port in a UsernameAction
+usernameAction : Signal (Maybe Time, Action)
+usernameAction = dontTimestamp <| S.map UsernameAction receiveUsername
+
+dontTimestamp : Signal a -> Signal (Maybe Time, a)
+dontTimestamp sig =
+    S.map2 (,)
+        (S.map (\_->Nothing) clock)
+        sig
 
 
 {-
 - MAIN
 -}
 
+worldSignal : Signal World
+worldSignal = S.foldp update initial input
+
 main : Signal E.Element
-main = S.map view (S.foldp update initial input)
+main = S.map view worldSignal
 
 
 {-
