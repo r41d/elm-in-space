@@ -29,36 +29,9 @@
     var rng = (Math.random() * 1000000000) | 0;
     console.log("Sending rng=" + rng + " to application");
     // ... and start Elm with it
-    var elminspace =
-      Elm.embed(Elm.ElmInSpace, elmDiv,
-        { jsRNG : rng
-        , receiveUsername : ""
-        }
-      );
-
-    queryUsername = function(actuallyAsk) {
-      if (actuallyAsk) {
-        var username = null;
-        while (username == null) {
-          username = window.prompt("Yay, enter your name please...");
-        }
-        elminspace.ports.receiveUsername.send(username);
-        elminspace.ports.requestUsername.unsubscribe(queryUsername);
-      }
-    }
-
-    submitScore = function(dat) {
-      if (dat.user != "") {
-        var feuerbasis = new Firebase('https://elm-in-space.firebaseio.com/');
-        console.log(dat);
-        feuerbasis.push(dat);
-        elminspace.ports.submitScore.unsubscribe(submitScore);
-      }
-    }
-
-    elminspace.ports.requestUsername.subscribe(queryUsername);
-    elminspace.ports.submitScore.subscribe(submitScore);
-
+    var elminspace = Elm.ElmInSpace;
+    elminspace.ports.jsRNG.send(rng);
   </script>
 
 </html>
+

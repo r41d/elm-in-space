@@ -1,9 +1,8 @@
-module ElmInSpace (..) where
+port module ElmInSpace exposing (..)
 
-import Graphics.Collage as C
-import Graphics.Element as E
+import Collage as C
+import Element as E
 import Keyboard
-import Signal as S
 import Random as R
 import Color as C
 import Maybe as M
@@ -11,6 +10,7 @@ import List as L
 import Text as Txt
 import Time as T
 import Time exposing (Time)
+import Html
 
 import List.Extra as LE        -- lift2, removeWhen
 import Maybe.Extra as ME       -- isJust, mapDefault
@@ -42,33 +42,7 @@ worldBackground = False -- display the world in the background
 -}
 
 -- This port contains the initial random seed sent from the ecmascript side
-port jsRNG : Int
-
--- This port is used to trigger the queryUsername() function in ecmascript
-port requestUsername : Signal Bool      -- Elm -> EcmaScript
-port requestUsername =
-        S.map
-            (\world ->
-                case world.mode of
-                    Victory vicS -> not <| ME.isJust vicS.username
-                    _ -> False
-            )
-            worldSignal
-
--- This port is used to pass the queried username from ecmascript back to Elm
-port receiveUsername : Signal String    -- EcmaScript -> Elm
-
--- This port is used to trigger the submitScore() function in ecmascript
-port submitScore : Signal { score:Score, user:Username }   -- Elm -> EcmaScript
-port submitScore =
-        S.map
-            (\w -> case victoryUsername w of
-                       Just user -> {user = user, score = calculateScore w}
-                       Nothing   -> {user = "", score = 0}
-            )
-            worldSignal
-
--- Signal.filter : (a -> Bool) -> a -> Signal a -> Signal a
+port jsRNG : Sub Int
 
 
 {-
@@ -101,29 +75,13 @@ animcnt : World -> Int
 animcnt w = floor (w.gameTime)
 
 
-type alias Username = String
-
 type alias Score = Int
 
 type GameMode
     = PreIngame
     | Ingame
-    | Victory VictoryState
+    | Victory
     | Defeat
-
-type alias VictoryState =
-    { username : Maybe Username -- the username from ecmascript
-    , submitted : Bool -- whether we already submitted to leaderboards
-    }
-
-justVictory : World -> Bool
-justVictory w = ME.isJust (victoryUsername w)
-
-victoryUsername : World -> Maybe (Username)
-victoryUsername world =
-    case world.mode of
-        Victory vicS -> vicS.username
-        _            -> Nothing
 
 type Direction
     = DirL
@@ -150,7 +108,6 @@ type Action
     | RightAction
     | ShootAction
     | NothingAction
-    | UsernameAction String -- for getting username from EcmaScript
     | SubmittedAction
 
 
@@ -161,13 +118,13 @@ type Action
 initEnemies : List Enemy
 initEnemies =
     let
-        xlist = L.map ((*) 15) [0..9]
-        ylist = L.map ((*) 15) [0..5]
+        xlist = L.map ((*) 15) (List.range 0 9)
+        ylist = L.map ((*) 15) (List.range 0 5)
         ppx x = roundF <| 40 + 5 * toFloat x -- position formulas
         ppy y = roundF <| 40 + 2.5 * toFloat y
         kk y = y // 30 + 1 -- kind formula
     in
-        LE.lift2 (\x' y' -> { x = ppx x', y = ppy y', kind = kk y', dead = Nothing }) xlist ylist
+        LE.lift2 (\xx yy -> { x = ppx xx, y = ppy yy, kind = kk yy, dead = Nothing }) xlist ylist
 
 initial : World
 initial = { mode = PreIngame
@@ -252,14 +209,6 @@ processInputPreIngame act world =
 processInputVictory : Action -> World -> World
 processInputVictory act world =
     case act of
-        UsernameAction user ->
-            case world.mode of
-                Victory vicS ->
-                    if vicS.submitted
-                        then world
-                        else {world | mode = Victory {vicS | username=Just user}}
-                _ ->
-                    world
         _ ->
             world
 
@@ -319,7 +268,7 @@ moveEnemies ({ enemies, foeDir } as world) =
         xmin = L.minimum enemiesX
         xmax = L.maximum enemiesX
         ymax = L.maximum (L.map .y enemies)
-        moveSingleEnemy e x' y' = {e | x=e.x+(normalize x'),  y=e.y+(normalize y')}
+        moveSingleEnemy e xx yy = {e | x=e.x+(normalize xx),  y=e.y+(normalize yy)}
         moveAllLeft es = L.map (\e -> moveSingleEnemy e -2 0) es
         moveAllRight es = L.map (\e -> moveSingleEnemy e 2 0) es
         moveAllDown es = L.map (\e -> moveSingleEnemy e 0 1) es
@@ -342,7 +291,7 @@ moveEnemies ({ enemies, foeDir } as world) =
 letEnemiesShoot : World -> World
 letEnemiesShoot ({ enemies, seed } as world) =
     let
-        enemyGen = shootNow `R.andThen` (\sn -> if sn then randomEnemy enemies else randomEnemy [])
+        enemyGen = shootNow |> R.andThen (\sn -> if sn then randomEnemy enemies else randomEnemy [])
         (maybeRandFoe, s) = R.generate enemyGen seed
         seedWorld = {world | seed = s}
     in
@@ -356,7 +305,7 @@ randomEnemy enemies =
     let
         idx = R.int 0 (L.length enemies - 1)
     in
-        R.map (\i -> (enemies `LE.getAt` i)) idx
+        R.map (\i -> (enemies |> LE.getAt i)) idx
 
 
 spawnShot : World -> Enemy -> World
@@ -420,7 +369,7 @@ changeMode : World -> World
 changeMode world =
     if world.enemies |> L.isEmpty
     then
-        { world | mode = Victory { username = Nothing, submitted = False } }
+        { world | mode = Victory }
     else
         if world.lives <= 0
         then
@@ -527,7 +476,7 @@ zero (x,y) f = C.move (x,-y) (C.move (-450,250) f)
 -}
 
 input : Signal (Maybe Time, Action)
-input = S.mergeMany [leftNright, space, usernameAction]
+input = S.mergeMany [leftNright, space]
 
 leftNright : Signal (Maybe Time, Action)
 leftNright =
@@ -545,10 +494,6 @@ leftNright =
 space : Signal (Maybe Time, Action)
 space = dontTimestamp <| S.map (always ShootAction) (S.filter identity False Keyboard.space)
 
---- wrap the the receiveUsername port in a UsernameAction
-usernameAction : Signal (Maybe Time, Action)
-usernameAction = dontTimestamp <| S.map UsernameAction receiveUsername
-
 dontTimestamp : Signal a -> Signal (Maybe Time, a)
 dontTimestamp sig =
     S.map2 (,)
@@ -563,8 +508,13 @@ dontTimestamp sig =
 worldSignal : Signal World
 worldSignal = S.foldp update initial input
 
-main : Signal E.Element
-main = S.map view worldSignal
+--main : Signal E.Element
+--main = S.map view worldSignal
+
+main : Program flags
+main =
+  Html.program
+    { init = initial, update = update, view = view, subscriptions = \_ -> Sub.none }
 
 
 {-
@@ -575,3 +525,4 @@ main = S.map view worldSignal
 {-| Round a float
 -}
 roundF = toFloat << round
+
